@@ -392,7 +392,7 @@
     const map = s.map ? '<a class="map-link" href="' + esc(s.map) + '" target="_blank" rel="noopener">' + ICON.pin + '在 Google Maps 開啟' + ICON.arrow + '</a>' : '';
     const world = s.world ? '<a class="world-btn" href="worlds/' + esc(s.world) + '.html">' + ICON.cube + '<span>進入 3D 虛擬空間</span><span class="arr" aria-hidden="true">→</span></a>' : '';
     const pic = s.img || s.id;
-    return '<article class="spot' + (i % 2 ? ' is-even' : '') + '" id="spot-' + esc(s.id) + '">' +
+    return '<article class="spot' + (i % 2 ? ' is-even' : '') + '" id="spot-' + esc(s.id) + '" data-spot-id="' + esc(s.id) + '">' +
       '<div class="spot__node" aria-hidden="true"><span class="spot__node-dot"></span><time>' + esc(s.time || '') + '</time></div>' +
       '<div class="spot__media">' +
         '<div class="spot__parallax" data-fx="' + esc(s.fx || 'mist') + '" data-id="' + esc(pic) + '" data-accent="' + esc(d.accent || '#7fe3ff') + '">' +
