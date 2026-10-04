@@ -12,7 +12,7 @@
     "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }}
   </script>
-  <link rel="stylesheet" href="world.css?v=10041652">
+  <link rel="stylesheet" href="world.css?v=10041711">
   <style>
     .w-loading { background: radial-gradient(120% 80% at 50% 115%, rgba(20, 90, 200, .28) 0%, rgba(0, 0, 0, 0) 62%), #000; }
     .ic-sound[aria-pressed="true"] { border-color: rgba(127, 227, 255, .55); box-shadow: 0 0 0 1px rgba(127, 227, 255, .25), 0 12px 40px rgba(0, 0, 0, .28); }
@@ -931,5 +931,7 @@ w.onUpdate((dt, t) => {
 
 w.start();
 </script>
+  <script src="../js/ambient.js?v=10041711"></script>
+  <script>window.Ambient && Ambient.mountWorld('ice', { position: 'bottom-right' });</script>
 </body>
 </html>

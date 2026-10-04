@@ -20,7 +20,7 @@ window.TRIP = {
   subtitle: 'Fire & Ice · 10 天環島',
   dates: '2026.10.03 — 10.14',
   stats: [
-    { value: '1,800', unit: 'km', label: '環島一號公路' },
+    { value: '2,300', unit: 'km', label: '環島一號公路' },
     { value: '14', unit: '座', label: '瀑布' },
     { value: '3', unit: '個', label: '冰洞與冰川' },
     { value: '4', unit: '池', label: '溫泉' },
@@ -161,7 +161,7 @@ window.TRIP = {
         { id: 'bulandstindur', time: '15:00', title: '金字塔山小鎮', en: 'Búlandstindur · Djúpivogur', fx: 'mist',
           lat: 64.6941, lng: -14.4154, map: 'https://maps.app.goo.gl/CZbvD2MDyoozkTvp6',
           desc: '一座完美金字塔形的神山倒映在峽灣裡。漁港小鎮喝杯咖啡、上個廁所。' },
-        { id: 'gufufoss', time: '17:00', title: '白日夢冒險王 滑板公路', en: 'Fjarðarheiði · Gufufoss', fx: 'drive',
+        { id: 'gufufoss', time: '17:00', title: '白日夢冒險王 滑板公路', en: 'Fjarðarheiði · Gufufoss', fx: 'waterfall',
           lat: 65.2400, lng: -14.0576, map: 'https://maps.app.goo.gl/bAsXiauWgWhY6zac9',
           desc: 'Walter Mitty 踩著滑板一路俯衝進峽灣的那條公路。開下山的每一個彎，都是電影畫面。' },
         { id: 'seydisfjordur', time: '17:30', title: '彩虹教堂', en: 'Seyðisfjörður Blue Church', fx: 'sunset', tags: ['必去'],

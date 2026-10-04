@@ -12,7 +12,7 @@
     "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }}
   </script>
-  <link rel="stylesheet" href="world.css?v=10041652">
+  <link rel="stylesheet" href="world.css?v=10041711">
 </head>
 <body>
 <div class="w-loading"><div class="w-loading-inner">
@@ -193,7 +193,7 @@ const w = await createWorld({
       text: '冰島語是「教堂山」，台灣人看它像一頂斜戴的草帽。一層層的岩層像蛋糕切面，下雪後特別明顯 —— 全冰島被拍最多次的山就是它。' },
     { at: { x: -2, z: 5 }, radius: 5.5, kicker: 'KIRKJUFELLSFOSS', title: '教會山瀑布',
       text: '小河從高地流下，在這裡分成三階落下。瀑布在前、草帽山在後，就是明信片上的經典構圖。走近一點，感受水霧。' },
-    { at: { x: -12.5, z: 5.5 }, radius: 5, kicker: 'GAME OF THRONES', title: '冰與火之歌',
+    { at: { x: -11.5, z: 9.5 }, radius: 6, kicker: 'GAME OF THRONES', title: '冰與火之歌',
       text: '《冰與火之歌：權力遊戲》第六、七季裡，長城以北的「箭頭山」就是在這裡取景。旁邊的腳架，是整晚守著極光的攝影師留下的。' },
   ],
 });
@@ -687,9 +687,9 @@ function buildSign(x, z, yaw) {
     const c = cv.getContext('2d');
     c.fillStyle = '#6b4a30'; c.fillRect(0, 0, 512, 128);
     c.fillStyle = 'rgba(0,0,0,0.18)'; for (let i = 0; i < 9; i++) c.fillRect(0, 10 + i * 13, 512, 2);
-    c.fillStyle = '#f6ead8'; c.font = '700 50px -apple-system, "PingFang TC", "Noto Sans TC", sans-serif';
+    c.fillStyle = '#f6ead8'; c.font = '700 50px system-ui, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif';
     c.textBaseline = 'middle'; c.fillText(text, 26, 50);
-    c.font = '500 26px -apple-system, "PingFang TC", "Noto Sans TC", sans-serif'; c.globalAlpha = 0.85; c.fillText(sub, 28, 98);
+    c.font = '500 26px system-ui, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif'; c.globalAlpha = 0.85; c.fillText(sub, 28, 98);
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
     const m = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.32, 0.05), [woodDark, woodDark, woodDark, woodDark,
       new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 })]);
@@ -783,7 +783,7 @@ function buildIcicles() {
 const bridge = buildBridge();
 TRAILS.push(
   [[SPAWN.x, SPAWN.z], [-1, 15], [-2, 8], [-2.5, 5]],                                           // spawn → falls overlook
-  [[-2.5, 5], [-7, 5.5], [-12.5, 5.5]],                                                         // → photographers
+  [[-2.5, 5], [-7, 7.5], [-11.5, 9.5]],                                                         // → photographers
   [[SPAWN.x, SPAWN.z], [4, 13], [8, 6], [bridge.ends[0].x, bridge.ends[0].z]],                    // spawn → bridge
   [[bridge.ends[1].x, bridge.ends[1].z], [16, -18], [18, -28], [18, -33]],                       // bridge → shore
 );
@@ -842,7 +842,7 @@ scene.add(helpers.createSteam({ center: { x: PEAK.x - 10, z: PEAK.z + 72 }, area
     const a = r() * Math.PI * 2, d = 8 + Math.sqrt(r()) * 56, x = 4 + Math.cos(a) * d, z = -8 + Math.sin(a) * d;
     if (H(x, z) < 0.8 || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 6 || trailDist(x, z) < 2.2) continue;
     const q = RIVER.query(x, z); if (q.d < RIVER.props(q.s).hw + 2.5) continue;
-    if ([[18, -31], [-2, 5], [-12.5, 5.5], [3.2, 15.5]].some(([px, pz]) => Math.hypot(x - px, z - pz) < 5)) continue;
+    if ([[18, -31], [-2, 5], [-11.5, 9.5], [-12.5, 5.2], [3.2, 15.5]].some(([px, pz]) => Math.hypot(x - px, z - pz) < 5)) continue;
     land.push({ x, z, s: 0.45 + Math.pow(r(), 1.8) * 1.7 });
   }
   RIVER.SK.forEach((s0, k) => {                         // rocks flanking every waterfall lip and the pool
@@ -900,6 +900,43 @@ if (w.composer) {
   w.composer.insertPass(grade, w.composer.passes.length - 1);
 }
 
+// shooting star: a streak that crosses the sky every ~12–25 s
+const meteor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+  uniforms: { uA: { value: 0 } },
+  vertexShader: /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`uniform float uA; varying vec2 vUv;
+    void main(){ float a = pow(vUv.x, 2.5) * smoothstep(0.5, 0.0, abs(vUv.y - 0.5)) * uA;
+      gl_FragColor = vec4(vec3(0.85, 0.97, 1.0) * a * 3.0, 1.0); }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide,
+}));
+meteor.matrixAutoUpdate = false; meteor.frustumCulled = false; meteor.renderOrder = -996; meteor.visible = false;
+scene.add(meteor);
+const MET = { t: -1, next: 9, from: new THREE.Vector3(), dir: new THREE.Vector3(), dur: 0.9 };
+const mX = new THREE.Vector3(), mY = new THREE.Vector3(), mZ = new THREE.Vector3(), mP = new THREE.Vector3();
+function stepMeteor(dt) {
+  MET.next -= dt;
+  if (MET.t < 0 && MET.next <= 0) {
+    const az = Math.PI + (Math.random() - 0.5) * 2.2, el = 0.45 + Math.random() * 0.5;
+    MET.from.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)).multiplyScalar(600);
+    MET.dir.set((Math.random() - 0.5) * 2, -0.35 - Math.random() * 0.4, (Math.random() - 0.5) * 0.6).normalize();
+    MET.t = 0; MET.dur = 0.7 + Math.random() * 0.5; MET.next = 12 + Math.random() * 13; meteor.visible = true;
+  }
+  if (MET.t < 0) return;
+  MET.t += dt;
+  const k = MET.t / MET.dur;
+  if (k >= 1) { MET.t = -1; meteor.visible = false; return; }
+  const len = 70 * Math.sin(Math.PI * Math.min(1, k * 1.3));
+  mP.copy(camera.position).add(MET.from).addScaledVector(MET.dir, k * 160);            // head
+  mX.copy(MET.dir);
+  mZ.subVectors(camera.position, mP).normalize();
+  mY.crossVectors(mZ, mX).normalize();
+  mZ.crossVectors(mX, mY);
+  meteor.matrix.makeBasis(mX.multiplyScalar(len), mY.multiplyScalar(1.6), mZ);
+  meteor.matrix.setPosition(mP.addScaledVector(MET.dir, -len / 2));
+  meteor.matrixWorldNeedsUpdate = true;
+  meteor.material.uniforms.uA.value = Math.sin(Math.PI * k);
+}
+
 /* ═════════════════════════ 12. per-frame ═════════════════════════ */
 const ripples = [];
 {
@@ -915,6 +952,7 @@ w.onUpdate((dt, t) => {
   TIME.value = t;
   sea.material.uniforms.uTime.value = t;
   dome.position.copy(camera.position);
+  stepMeteor(dt);
 
   // aurora: slow breathing + periodic substorm bursts
   nextBurst -= dt;
@@ -964,5 +1002,7 @@ w.onUpdate((dt, t) => {
 window.__KIRK = { H, KH, RIVER, baseLand, coastZ, groundColor, kColor, world: w };   // debug handle
 w.start();
 </script>
+  <script src="../js/ambient.js?v=10041711"></script>
+  <script>window.Ambient && Ambient.mountWorld('aurora', { position: 'bottom-right' });</script>
 </body>
 </html>

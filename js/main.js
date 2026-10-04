@@ -867,7 +867,7 @@
     const a = safe(() => AuroraGL(c, { amp: 1.15, offset: 40 }), 'finale aurora');
     if (!a) { c.style.display = 'none'; html.classList.add('no-webgl'); return; }
     if (REDUCED) { a.render(20, 0, 0); return; }
-    let running = false, raf = 0, t = 0, last = 0;
+    let running = false, raf = 0, t = 0, last = 0, inView = false;
     const loop = (now) => {
       if (!running) return;
       raf = requestAnimationFrame(loop);
@@ -876,10 +876,11 @@
     };
     const start = () => { if (running || document.hidden) return; running = true; last = performance.now(); raf = requestAnimationFrame(loop); };
     const stop = () => { running = false; cancelAnimationFrame(raf); };
-    if ('IntersectionObserver' in window) new IntersectionObserver((en) => en.forEach((e) => (e.isIntersecting ? start() : stop()))).observe(sec);
-    else start();
+    if ('IntersectionObserver' in window) new IntersectionObserver((en) => en.forEach((e) => { inView = e.isIntersecting; if (inView) start(); else stop(); })).observe(sec);
+    else { inView = true; start(); }
     window.addEventListener('resize', debounce(() => a.resize(), 150));
-    document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
+    // resume after a tab switch (e.g. presenter flips to slides and back while on the finale)
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); else if (inView) start(); });
     // render one frame immediately so it is never blank
     a.render(0, 0, 0);
   }

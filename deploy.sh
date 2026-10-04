@@ -55,6 +55,10 @@ if [ -z "$(git config user.email || true)" ] || [ -z "$(git config user.name || 
 fi
 
 # ---------- 2. add + commit ----------
+# 更新 index.html / worlds/*.html 裡本地 js、css 的 ?v= 版本號，讓看過舊版的瀏覽器拿到新行程
+if [ -f bump.py ] && command -v python3 >/dev/null 2>&1; then
+  python3 bump.py >/dev/null && ok "已更新快取版本號（bump.py）"
+fi
 git add -A
 if git diff --cached --quiet; then
   warn "沒有新的變更，略過 commit"

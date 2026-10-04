@@ -284,3 +284,6 @@ body.w-photo .w-photobar { opacity: 1; pointer-events: auto; transform: translat
 @media (prefers-reduced-motion: reduce) {
   .w-loading::before { animation: none; }
 }
+
+/* 環境音效按鈕：手機上避開跳躍鍵 */
+@media (pointer: coarse) { .amb-br { bottom: calc(150px + env(safe-area-inset-bottom)) !important; } }

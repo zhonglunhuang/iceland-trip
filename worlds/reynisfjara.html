@@ -12,7 +12,7 @@
     "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }}
   </script>
-  <link rel="stylesheet" href="world.css?v=10041652">
+  <link rel="stylesheet" href="world.css?v=10041711">
   <style>
     /* sneaker-wave warning: red-tinted Apple glass banner + pulsing screen edge */
     .rf-warn {
@@ -83,7 +83,7 @@ const FOG = 0xa9b3ba;                                   // overcast haze = sky h
 const SUN_DIR = [0.42, 0.33, -0.84];                    // low sun behind the sea stacks (front-right)
 const SPAWN = { x: -1, z: 15, yaw: Math.PI - 0.12 };
 const FRONT = -12;                                      // front line of the basalt wall
-const ZONE = { cx: -16, cz: -12, w: 22, d: 68 };        // column block x −27…−5, z −46…22
+const ZONE = { cx: -14.5, cz: -12, w: 25, d: 68 };      // column block x −27…−2, z −46…22
 const PYR = { x: -14.5, z: 2.5, top: 6.2 };             // the column staircase
 const CAVE = { z: -22, hw: 5.6, depth: 11, h: 9.5 };    // Hálsanefshellir
 const SIGN = { x: -5.5, z: -10.5 };
@@ -119,6 +119,7 @@ function H(x, z) {
     m += fbm(x * 0.13, z * 0.13, 3) * 2.4 * smoothstep(0, 4, d);                         // rugged rock
     h += Math.max(0, m);
   }
+  if (z > 85) h = lerp(h, -0.4, smoothstep(85, 108, z));                                // fade into the far plain
   return h;
 }
 
@@ -136,8 +137,8 @@ function wallRel(x, z) {
 /** Stepped "organ pipe" pyramid, quantised to 0.42 m so it is a walk/jump staircase. */
 function pyrRel(x, z) {
   const dz = Math.abs(z - PYR.z);
-  if (x > -4.0 || dz > 10) return 0;
-  let h = PYR.top - Math.max(0, x - PYR.x) * 0.55 - dz * 0.5 + noise2D(x * 0.5, z * 0.5) * 0.45;
+  if (x > -2.2 || dz > 10) return 0;
+  let h = PYR.top - Math.max(0, x - PYR.x) * 0.55 - dz * 0.5 + noise2D(x * 0.5, z * 0.5) * 0.3;
   if (h < 0.3) return 0;
   h = Math.round(h / 0.42) * 0.42 + (h2(z, x) - 0.5) * 0.12;
   return Math.max(0.32, h);
@@ -206,7 +207,7 @@ const w = await createWorld({
   camera: { distance: 8.5, pitch: 0.26, lookUp: 1.9, maxDistance: 22 },
   hints: ['爬上玄武岩階梯', '走進海蝕洞抬頭看', '瘋狗浪來了往陸地跑', ...(touch ? [] : ['B 鍵召喚瘋狗浪'])],
   info: [
-    { at: { x: -2.4, z: 3 }, radius: 5.5, kicker: '地質奇觀', title: '玄武岩柱 Gardar',
+    { at: { x: -1.4, z: 3 }, radius: 5.5, kicker: '地質奇觀', title: '玄武岩柱 Gardar',
       text: '厚厚的熔岩慢慢冷卻、收縮，像乾掉的泥巴一樣裂成六角形，一根根排得像管風琴。這座「階梯」可以一路跳上去 —— 站高一點，瘋狗浪就追不到你。' },
     { at: { x: -12.5, z: CAVE.z }, radius: 6, kicker: '你發現了', title: '海蝕洞 Hálsanefshellir',
       text: '海浪花了上萬年，一口一口把玄武岩啃出這個洞。抬頭看：天花板是一根根倒掛的六角柱，像蜂巢一樣。漲潮時洞口會被海水淹沒。' },
@@ -324,6 +325,10 @@ roughnessFactor = mix(roughnessFactor, 0.06, rfWet);`)
 };
 terrain.material.customProgramCacheKey = () => 'rf-terrain';
 scene.add(terrain);
+// far-field black plain beyond the terrain edges (only ever seen through the haze)
+const plain = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1600).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2c2d30, roughness: 0.9 }));
+plain.position.set(-498, -0.45, 0); plain.name = 'far-plain';
+scene.add(plain);
 
 /* ═════════════════════════ 4. basalt columns, staircase & sea cave ═════════════════════════ */
 const caveCells = [];
@@ -394,7 +399,7 @@ scene.add(basalt);
 }
 
 /* ═════════════════════════ 5. ocean, swash & foam ═════════════════════════ */
-const STACK_FOAM = [[42, -108, 5.6, 1], [56, -124, 6.8, 1], [40.5, -143.2, 6.5, 1], [45.8, -112, 3, 0.9], [52.2, -120.5, 4.4, 0.9], [61, -131, 2.6, 0.8]]
+const STACK_FOAM = [[48, -108, 9.5, 1], [62, -125, 11.5, 1], [46, -144, 10, 1], [51.5, -112, 5, 0.9], [58, -121, 7, 0.9], [67, -132, 4, 0.8]]
   .map((a) => new THREE.Vector4(...a));
 function gridGeometry(xs, zs, yFn) {
   const nx = xs.length, nz = zs.length;
@@ -640,22 +645,22 @@ function makeStack({ x, z, h, r, seed, lean = 0 }) {
   return m;
 }
 [
-  { x: 42, z: -108, h: 36, r: 5.2, seed: 1, lean: 1.5 },     // Landdrangur
-  { x: 45.8, z: -112, h: 21, r: 2.8, seed: 2, lean: -1 },
-  { x: 56, z: -124, h: 50, r: 6.4, seed: 3, lean: -2.5 },    // Háidrangur (the tall one)
-  { x: 52.2, z: -120.5, h: 29, r: 4.2, seed: 4, lean: 1 },
-  { x: 44, z: -140, h: 27, r: 4.4, seed: 5 },                // Langhamar ridge
-  { x: 40.2, z: -143.2, h: 33, r: 4.0, seed: 6, lean: 1 },
-  { x: 36.6, z: -146.4, h: 22, r: 3.4, seed: 7 },
-  { x: 49, z: -115, h: 6, r: 2.0, seed: 8 },
-  { x: 61, z: -131, h: 9, r: 2.5, seed: 9 },
-  { x: 38.6, z: -103, h: 4, r: 1.7, seed: 10 },
+  { x: 48, z: -108, h: 34, r: 8.2, seed: 1, lean: 2 },       // Landdrangur
+  { x: 51.5, z: -112.5, h: 22, r: 4.6, seed: 2, lean: -1.5 },
+  { x: 62, z: -125, h: 46, r: 10, seed: 3, lean: -3 },        // Háidrangur (the tall one)
+  { x: 58, z: -120.5, h: 28, r: 6.6, seed: 4, lean: 1.5 },
+  { x: 50, z: -141, h: 25, r: 7, seed: 5 },                   // Langhamar ridge
+  { x: 46, z: -144.5, h: 31, r: 6.4, seed: 6, lean: 1.5 },
+  { x: 42.5, z: -148, h: 20, r: 5.4, seed: 7 },
+  { x: 55.5, z: -116, h: 6, r: 2.6, seed: 8 },
+  { x: 67, z: -132, h: 9, r: 3.4, seed: 9 },
+  { x: 43, z: -103, h: 4, r: 2.2, seed: 10 },
 ].forEach((s) => scene.add(makeStack(s)));
 
 /* ═════════════════════════ 8. rocks, lyme grass, warning sign ═════════════════════════ */
 {
   const R = rand(77), pos = [];
-  const clear = (x, z, r) => [[SPAWN.x, SPAWN.z, 3], [-2.4, 3, 2.5], [-3, -54, 3], [SIGN.x, SIGN.z, 2.4]].every(([a, b, rr]) => Math.hypot(x - a, z - b) > rr + r);
+  const clear = (x, z, r) => [[SPAWN.x, SPAWN.z, 3], [-1.4, 3, 2.5], [-3, -54, 3], [SIGN.x, SIGN.z, 2.4]].every(([a, b, rr]) => Math.hypot(x - a, z - b) > rr + r);
   for (let z = -66; z < 40; z += 2.2 + R() * 2.5) {
     if (z > -47 && z < 23) {
       if (Math.abs(z - PYR.z) < 10.5 || Math.abs(z - CAVE.z) < CAVE.hw + 1.2) continue;
@@ -758,7 +763,7 @@ scene.add(helpers.createSteam({
   count: 60, height: 5, size: 9, opacity: 0.06, speed: 0.45, spread: 2.5, wind: [-0.55, 0.05], color: 0xe9eef1,
 }));
 scene.add(helpers.createSteam({
-  sources: [{ x: 47, z: -118, r: 16, y: 0 }, { x: 41, z: -143, r: 10, y: 0 }, { x: 30, z: -98, r: 8, y: 0 }],
+  sources: [{ x: 54, z: -118, r: 18, y: 0 }, { x: 47, z: -144, r: 12, y: 0 }, { x: 34, z: -98, r: 8, y: 0 }],
   count: 34, height: 16, size: 26, opacity: 0.09, speed: 0.22, spread: 3, wind: [0.15, 0.05], color: 0xe3e8eb, seed: 44,
 }));
 
@@ -1096,5 +1101,7 @@ w.onUpdate((dt, t) => {
 globalThis.__RF = { w, H, shoreX, cliffFront, sandH, swashFront, wallRel, pyrRel, caveArch, basalt, caveCells, triggerSneak, SN };
 w.start();
 </script>
+  <script src="../js/ambient.js?v=10041711"></script>
+  <script>window.Ambient && Ambient.mountWorld('waves', { position: 'bottom-right' });</script>
 </body>
 </html>

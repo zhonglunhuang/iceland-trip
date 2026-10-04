@@ -8,7 +8,7 @@
      0.0s      airplane window → push through the glass
      1.0s      clouds rush toward camera (procedural noise
                sprites, motion smear, turbulence shake, white-outs)
-               captions: 北緯 64 度 → 一座由冰與火組成的島 → 10 天 · 1,800 公里
+               captions: 北緯 64 度 → 一座由冰與火組成的島 → 10 天 · 2,300 公里
      4.3s      clouds part → aurora.jpg push-in + aurora shimmer
      5.6s      giant title assembles (blur-in, gradient text)
      8.0s      letterbox bars slide away, overlay dissolves
@@ -59,7 +59,7 @@
   var DEFAULT_CAPS = [
     { kicker: '64°08′N · 21°56′W', text: '北緯 64 度' },
     { kicker: 'FIRE & ICE', text: '一座由冰與火組成的島' },
-    { kicker: 'ROUTE 1 · RING ROAD', text: '10 天 · 1,800 公里' }
+    { kicker: 'ROUTE 1 · RING ROAD', text: '10 天 · 2,300 公里' }
   ];
 
   /* ---------- math ---------- */
