@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <title>藍冰洞 · 3D 冰川探險</title>
+  <meta name="description" content="走進瓦特納冰川的藍色心臟：一個可以自由探索的 3D 藍冰洞。">
+  <script type="importmap">
+  {"imports":{
+    "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }}
+  </script>
+  <link rel="stylesheet" href="world.css?v=10041652">
+  <style>
+    .w-loading { background: radial-gradient(120% 80% at 50% 115%, rgba(20, 90, 200, .28) 0%, rgba(0, 0, 0, 0) 62%), #000; }
+    .ic-sound[aria-pressed="true"] { border-color: rgba(127, 227, 255, .55); box-shadow: 0 0 0 1px rgba(127, 227, 255, .25), 0 12px 40px rgba(0, 0, 0, .28); }
+  </style>
+</head>
+<body>
+<div class="w-loading"><div class="w-loading-inner">
+  <div class="w-kicker">ICELAND · 3D WORLD</div>
+  <h1 class="w-loading-title">藍冰洞</h1>
+  <p class="w-loading-sub">Crystal Ice Cave · Breiðamerkurjökull</p>
+  <div class="w-bar"><i></i></div>
+  <p class="w-loading-tip">戴好冰爪，跟著藍光走進千年冰川的心臟</p>
+</div></div>
+<script type="module">
+/*
+ * 藍冰洞 Crystal Ice Cave — a winding tunnel of glacial ice inside Breiðamerkurjökull.
+ * Everything (arch, floor, clamps, camera collision, icicles, drips) is driven by ONE centre-line
+ * curve + a cross-section profile per sample, so walls, floor and physics always agree.
+ */
+import * as THREE from 'three';
+import { createWorld, helpers } from './engine.js';
+const { noise2D, fbm, smoothstep, lerp, clamp, rand } = helpers;
+
+/* ═════════════════════ 1. Cave layout (pure data, no rendering) ═════════════════════ */
+const CTRL = [[-5, -66], [-9, -52], [-6, -38], [1, -27], [6, -15], [4, -2], [-1, 10], [-3, 23], [0, 36], [2, 48]];
+const curve = new THREE.CatmullRomCurve3(CTRL.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
+const LEN = curve.getLength();
+const NS = Math.round(LEN / 0.4), DS = LEN / NS;
+const PX = new Float32Array(NS + 1), PZ = new Float32Array(NS + 1), TX = new Float32Array(NS + 1), TZ = new Float32Array(NS + 1);
+const NX = new Float32Array(NS + 1), NZ = new Float32Array(NS + 1);
+{
+  const p = new THREE.Vector3(), t = new THREE.Vector3();
+  for (let i = 0; i <= NS; i++) {
+    curve.getPointAt(i / NS, p); curve.getTangentAt(i / NS, t);
+    const l = Math.hypot(t.x, t.z) || 1;
+    PX[i] = p.x; PZ[i] = p.z; TX[i] = t.x / l; TZ[i] = t.z / l; NX[i] = -TZ[i]; NZ[i] = TX[i];
+  }
+}
+const S_MOUTH = LEN - 11;            // the arch opens to daylight here
+const S_MOULIN = 31;                 // vertical shaft with a skylight
+const S_WALK0 = 13, S_WALK1 = S_MOUTH - 1.3;
+const S_SPAWN = S_MOUTH - 12.5;
+const WATER = -0.04;                 // meltwater puddle surface
+const RH = 1.9;                      // moulin hole radius
+const idxAt = (s) => clamp(Math.round(s / DS), 0, NS);
+function pathPos(s, u = 0, out = {}) {
+  const f = clamp(s / DS, 0, NS), i = Math.min(NS - 1, Math.floor(f)), t = f - i;
+  out.x = lerp(PX[i], PX[i + 1], t) + lerp(NX[i], NX[i + 1], t) * u;
+  out.z = lerp(PZ[i], PZ[i + 1], t) + lerp(NZ[i], NZ[i + 1], t) * u;
+  return out;
+}
+const MOU = pathPos(S_MOULIN, 0.6);
+
+// cross-section profile per sample: half-width rx, height ry, floor base, ellipse centre offset
+const RX = new Float32Array(NS + 1), RY = new Float32Array(NS + 1), BASE = new Float32Array(NS + 1), HOFF = new Float32Array(NS + 1);
+for (let i = 0; i <= NS; i++) {
+  const s = i * DS;
+  let rx = 5.3 + 1.0 * Math.sin(s * 0.083 + 0.6) + 0.7 * noise2D(s * 0.045, 3.1);
+  let ry = 4.9 + 0.9 * Math.sin(s * 0.061 + 2.0) + 0.8 * noise2D(s * 0.04, 7.7);
+  const mouth = smoothstep(S_MOUTH - 10, S_MOUTH, s);
+  rx += 1.8 * mouth; ry += 1.3 * mouth;
+  const ch = Math.exp(-(((s - S_MOULIN) / 7.5) ** 2));      // the moulin chamber
+  rx += 2.6 * ch; ry += 2.4 * ch;
+  const pinch = Math.sqrt(smoothstep(0, 13, s));              // dead end pinches shut
+  RX[i] = rx * pinch; RY[i] = ry * pinch; HOFF[i] = 0.19 * RY[i];
+  BASE[i] = 0.45 * smoothstep(S_MOUTH - 16, S_MOUTH, s) + 0.6 * (1 - smoothstep(0, 14, s));
+}
+const SEC = { rx: 0, ry: 0, base: 0, hOff: 0 };
+function secAt(s) {
+  const f = clamp(s / DS, 0, NS), i = Math.min(NS - 1, Math.floor(f)), t = f - i;
+  SEC.rx = lerp(RX[i], RX[i + 1], t); SEC.ry = lerp(RY[i], RY[i + 1], t);
+  SEC.base = lerp(BASE[i], BASE[i + 1], t); SEC.hOff = lerp(HOFF[i], HOFF[i + 1], t);
+  return SEC;
+}
+
+const PUDDLES = [
+  { s: 22, u: -1.2, r: 1.9, depth: 0.3 },
+  { s: 39, u: 2.3, r: 2.6, depth: 0.34 },
+  { s: 61, u: 1.0, r: 2.2, depth: 0.3 },
+  { s: 80, u: -1.6, r: 1.7, depth: 0.28 },
+].map((p) => Object.assign(p, pathPos(p.s, p.u)));
+
+/** Ground height in cave coordinates (s along the path, u lateral) — the floor mesh uses the same fn. */
+function floorAt(s, u, x, z) {
+  const S = secAt(s);
+  let y = S.base + 0.07 + 0.08 * fbm(x * 0.3, z * 0.3, 3) + 0.035 * noise2D(x * 1.4, z * 1.4);
+  const a = Math.abs(u) / Math.max(S.rx, 0.3), k = Math.min(1, S.ry / 4);
+  y += k * (0.8 * Math.pow(smoothstep(0.5, 1.05, a), 1.6) + 0.9 * Math.max(0, a - 1.0));   // icy banks
+  y += 0.5 * Math.exp(-((x - MOU.x) ** 2 + (z - MOU.z) ** 2) / 5.5);                        // snow cone under the moulin
+  for (let i = 0; i < PUDDLES.length; i++) {
+    const p = PUDDLES[i], d2 = (x - p.x) ** 2 + (z - p.z) ** 2;
+    if (d2 < p.r * p.r * 1.8) y = Math.min(y, WATER - p.depth + (p.depth + 0.12) * smoothstep(p.r * 0.3, p.r * 1.2, Math.sqrt(d2)));
+  }
+  return y;
+}
+
+/** Nearest point on the centre line → {s, u, n, t}. Brute force over ~300 segments (cheap). */
+const LOC = { s: 0, u: 0, nx: 0, nz: 0, tx: 0, tz: 0 };
+function locate(x, z) {
+  let best = Infinity, bi = 0, bt = 0;
+  for (let i = 0; i < NS; i++) {
+    const ax = PX[i], az = PZ[i], dx = PX[i + 1] - ax, dz = PZ[i + 1] - az;
+    let t = ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz);
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const ex = ax + dx * t - x, ez = az + dz * t - z, d2 = ex * ex + ez * ez;
+    if (d2 < best) { best = d2; bi = i; bt = t; }
+  }
+  LOC.nx = lerp(NX[bi], NX[bi + 1], bt); LOC.nz = lerp(NZ[bi], NZ[bi + 1], bt);
+  LOC.tx = lerp(TX[bi], TX[bi + 1], bt); LOC.tz = lerp(TZ[bi], TZ[bi + 1], bt);
+  LOC.s = (bi + bt) * DS;
+  LOC.u = (x - lerp(PX[bi], PX[bi + 1], bt)) * LOC.nx + (z - lerp(PZ[bi], PZ[bi + 1], bt)) * LOC.nz;
+  return LOC;
+}
+const heightAt = (x, z) => { const L = locate(x, z); return floorAt(L.s, L.u, x, z); };
+
+/* ── ice arch: noise-displaced elliptical vault ── */
+function n3(x, y, z) { return 0.5 * (noise2D(x + y * 0.71, z - y * 0.37) + noise2D(y * 1.13 + z * 0.29 + 11.7, x * 0.83 - 5.2)); }
+function wallDisp(x, y, z, h, s) {
+  let d = 0.85 * n3(x * 0.15, y * 0.15, z * 0.15) + 0.32 * n3(x * 0.42 + 9.1, y * 0.42, z * 0.42) + 0.12 * n3(x * 1.05, y * 1.05 + 3.3, z * 1.05);
+  d *= 0.4 + 0.6 * smoothstep(0.1, 1.8, h);
+  d *= smoothstep(RH + 0.5, RH + 3.5, Math.hypot(x - MOU.x, z - MOU.z));   // smooth rim around the skylight
+  return d * Math.sqrt(smoothstep(0, 13, s));
+}
+const AV = { x: 0, y: 0, z: 0, lat: 0, h: 0 };
+function archVertex(i, th) {
+  const rx = Math.max(RX[i], 1e-3), ry = Math.max(RY[i], 1e-3), c = Math.cos(th), sn = Math.sin(th);
+  let lat = rx * c, h = HOFF[i] + ry * sn;
+  let el = c / rx, eh = sn / ry; const ln = Math.hypot(el, eh) || 1; el /= ln; eh /= ln;
+  const d = wallDisp(PX[i] + NX[i] * lat, BASE[i] + h, PZ[i] + NZ[i] * lat, h, i * DS);
+  lat += el * d; h += eh * d;
+  AV.lat = lat; AV.h = h; AV.x = PX[i] + NX[i] * lat; AV.y = BASE[i] + h; AV.z = PZ[i] + NZ[i] * lat;
+  return AV;
+}
+/** How much daylight leaks through the ice here (0 = thick, deep blue · 1 = thin, white-cyan). */
+function iceGlow(s, h, ry, x, y, z) {
+  let g = 0.42;
+  g += 0.58 * Math.exp(-Math.max(0, S_MOUTH - s) / 8);
+  g += 0.5 * Math.exp(-((x - MOU.x) ** 2 + (z - MOU.z) ** 2) / 45) * smoothstep(0.5, 4.5, h);
+  g += 0.2 * smoothstep(0.4, 1.0, h / Math.max(ry * 1.19, 0.5));
+  g -= 0.3 * (1 - smoothstep(0.0, 1.5, h));
+  g += 0.15 * noise2D(x * 0.07 + y * 0.05, z * 0.07 - y * 0.03);
+  g -= 0.22 * (1 - smoothstep(6, 26, s));
+  return clamp(g, 0.03, 1);
+}
+
+const RING = 72, TH0 = -0.36, TH1 = Math.PI + 0.36, NV = RING + 1;
+const I_ARCH = Math.min(NS, Math.round((S_MOUTH + 0.4) / DS));
+const PHI = new Float32Array((I_ARCH + 1) * NV), RHO = new Float32Array((I_ARCH + 1) * NV);
+const LIMP = new Float32Array(I_ARCH + 1), LIMN = new Float32Array(I_ARCH + 1);
+const ARCH = (() => {
+  const n = (I_ARCH + 1) * NV;
+  const pos = new Float32Array(n * 3), uv = new Float32Array(n * 2), ice = new Float32Array(n * 2);
+  for (let i = 0; i <= I_ARCH; i++) {
+    let arc = 0, pl = 0, ph = 0, lp = 99, lnn = 99;
+    for (let j = 0; j <= RING; j++) {
+      const v = archVertex(i, TH0 + (TH1 - TH0) * (j / RING)), k = i * NV + j;
+      pos[k * 3] = v.x; pos[k * 3 + 1] = v.y; pos[k * 3 + 2] = v.z;
+      if (j) arc += Math.hypot(v.lat - pl, v.h - ph);
+      pl = v.lat; ph = v.h;
+      uv[k * 2] = (i * DS) / 7; uv[k * 2 + 1] = arc / 4.5;
+      ice[k * 2] = iceGlow(i * DS, v.h, RY[i], v.x, v.y, v.z);
+      ice[k * 2 + 1] = 1 - smoothstep(-0.2, 1.3, v.h);
+      let phi = Math.atan2(v.h - HOFF[i], v.lat); if (phi < -Math.PI / 2) phi += Math.PI * 2;
+      PHI[k] = phi; RHO[k] = Math.hypot(v.lat, v.h - HOFF[i]);
+      if (v.h > 0.12 && v.h < 2.2) { if (v.lat > 0) lp = Math.min(lp, v.lat); else lnn = Math.min(lnn, -v.lat); }
+    }
+    LIMP[i] = lp; LIMN[i] = lnn;
+  }
+  const a = LIMP.slice(), b = LIMN.slice();            // walkable half-width: min of neighbours − body radius
+  for (let i = 0; i <= I_ARCH; i++) {
+    let mp = 99, mn = 99;
+    for (let o = -3; o <= 3; o++) { const q = clamp(i + o, 0, I_ARCH); mp = Math.min(mp, a[q]); mn = Math.min(mn, b[q]); }
+    LIMP[i] = Math.max(0.3, mp - 0.55); LIMN[i] = Math.max(0.3, mn - 0.55);
+  }
+  return { pos, uv, ice };
+})();
+const limAt = (s, u) => { const i = Math.min(I_ARCH, idxAt(s)); return u >= 0 ? LIMP[i] : LIMN[i]; };
+
+/** Radius of the (displaced) wall at polar angle phi around the section centre of ring r. */
+function wallRadius(r, phi) {
+  const o = r * NV;
+  if (phi <= PHI[o] || phi >= PHI[o + RING]) return -1;
+  let lo = 0, hi = RING;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (PHI[o + m] <= phi) lo = m; else hi = m; }
+  const t = clamp((phi - PHI[o + lo]) / Math.max(1e-5, PHI[o + hi] - PHI[o + lo]), 0, 1);
+  return lerp(RHO[o + lo], RHO[o + hi], t);
+}
+function insideCave(x, y, z, margin) {
+  const L = locate(x, z);
+  if (L.s < 6 || L.s > S_MOUTH - 0.5) return false;
+  if (y < floorAt(L.s, L.u, x, z) + 0.3) return false;
+  const r = Math.min(I_ARCH, idxAt(L.s)), dy = y - BASE[r] - HOFF[r];
+  let phi = Math.atan2(dy, L.u); if (phi < -Math.PI / 2) phi += Math.PI * 2;
+  const wr = wallRadius(r, phi);
+  return wr > 0 && Math.hypot(L.u, dy) < wr - margin;
+}
+
+/* ═════════════════════ 2. World ═════════════════════ */
+const SP = pathPos(S_SPAWN, 0.4);
+const MOUTH_OUT = pathPos(S_MOUTH + 4, 0);
+const pin = (s, u) => { const p = pathPos(s, u); return { x: +p.x.toFixed(2), z: +p.z.toFixed(2) }; };
+const FOG = 0x0a2c62;
+
+const w = await createWorld({
+  title: '藍冰洞',
+  subtitle: 'Crystal Ice Cave · Breiðamerkurjökull',
+  backHref: '../index.html#worlds',
+  timeOfDay: 'day',
+  background: FOG,
+  fog: { color: FOG, near: 9, far: 100 },
+  sky: false,
+  exposure: 1.1,
+  hemi: { sky: 0x86c8ff, ground: 0x0b1a33, intensity: 0.55 },
+  sun: { color: 0xa9d6ff, intensity: 0.5, dir: [0.25, 1, 0.45] },
+  shadows: false,                           // diffuse light in a cave: the traveler's contact shadow reads better
+  spawn: { x: SP.x, z: SP.z, yaw: Math.atan2(MOUTH_OUT.x - SP.x, MOUTH_OUT.z - SP.z) },
+  boundsRadius: 140,
+  heightAt,
+  water: { level: WATER, slow: 0.7, maxDepth: 0.85 },
+  bloom: { strength: 0.8, radius: 0.55, threshold: 0.7 },
+  camera: { distance: 6.2, minDistance: 2.6, maxDistance: 11, pitch: 0.18, fov: 55, intro: false, lookUp: 1.0 },
+  player: { light: true },
+  hints: ['轉身，走進冰川深處', '找到從天井灑落的陽光'],
+  info: [
+    { at: pin(S_MOUTH - 3.5, 0), radius: 4.6, kicker: '冰洞入口', title: '洞口',
+      text: '藍冰洞是夏天的冰川融水在冰層底下沖刷出來的隧道。入冬後水流停了，冰洞才能安全進入——而且每年形狀都不一樣，今年走過的這一條，明年夏天就會融化消失。' },
+    { at: pin(S_MOUTH - 31, 1.0), radius: 4.2, kicker: '冰川小知識', title: '為什麼是藍色？', img: '../assets/img/crystal-ice-cave.jpg',
+      text: '冰川冰被上百公尺的積雪壓了好幾百年，氣泡幾乎都被擠光，變得極度緻密。光線穿過厚冰時，紅光和黃光被吸收，只有藍光走得最遠——所以冰越厚、越純，就越藍。' },
+    { at: pin(50, -(LIMN[idxAt(50)] - 1.2)), radius: 4.2, kicker: '冰川小知識', title: '冰的年齡',
+      text: '你身邊的冰可能已經上千歲了。牆上一條條黑色紋路是火山灰：每次火山爆發落在冰川上的灰，被新雪掩埋、壓實，像樹的年輪一樣，記錄著冰島的火山歷史。' },
+    { at: { x: +MOU.x.toFixed(2), z: +MOU.z.toFixed(2) }, radius: 4.4, kicker: '你發現了', title: '冰川豎井',
+      text: '頭頂這個垂直的洞叫作 moulin，是夏天融水從冰川表面一路往下鑽出的豎井。到了冬天，它變成一扇天窗，讓陽光和細雪灑進冰洞裡。' },
+  ],
+});
+const { scene, renderer, camera } = w;
+
+/* ═════════════════════ 3. Procedural textures (no image downloads) ═════════════════════ */
+function dataTex(data, size) {
+  const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  t.needsUpdate = true;
+  return t;
+}
+function normalFromHeight(H, size, k) {
+  const out = new Uint8Array(size * size * 4), at = (x, y) => H[((y + size) % size) * size + ((x + size) % size)];
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const dx = (at(x + 1, y) - at(x - 1, y)) * k, dy = (at(x, y + 1) - at(x, y - 1)) * k, l = Math.hypot(dx, dy, 1), o = (y * size + x) * 4;
+    out[o] = (-dx / l * 0.5 + 0.5) * 255; out[o + 1] = (-dy / l * 0.5 + 0.5) * 255; out[o + 2] = (1 / l * 0.5 + 0.5) * 255; out[o + 3] = 255;
+  }
+  return out;
+}
+/** Melt scallops: tileable Voronoi dishes (height → normal map + "thin ice" mask). */
+function makeScallops(size = 256, cells = 8) {
+  const r = rand(4), pts = [];
+  for (let i = 0; i < cells * cells; i++) pts.push([0.15 + r() * 0.7, 0.15 + r() * 0.7]);
+  const wrap = (i) => ((i % cells) + cells) % cells;
+  const H = new Float32Array(size * size), mask = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const fx = (x / size) * cells, fy = (y / size) * cells, ci = Math.floor(fx), cj = Math.floor(fy);
+    let d1 = 9;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      const q = pts[wrap(cj + oy) * cells + wrap(ci + ox)];
+      d1 = Math.min(d1, Math.hypot(fx - (ci + ox + q[0]), fy - (cj + oy + q[1])));
+    }
+    const k = y * size + x; H[k] = d1 * d1;
+    const m = 255 * (1 - Math.min(1, d1 * d1 * 2.2)); mask[k * 4] = mask[k * 4 + 1] = mask[k * 4 + 2] = m; mask[k * 4 + 3] = 255;
+  }
+  return { normal: dataTex(normalFromHeight(H, size, size / cells * 0.22), size), mask: dataTex(mask, size) };
+}
+/** Volcanic gravel: tileable pebbles (albedo multiplier + normal map). */
+function makeGravel(size = 256) {
+  const r = rand(9), H = new Float32Array(size * size), C = new Float32Array(size * size).fill(0.5);
+  for (let n = 0; n < 950; n++) {
+    const cx = r() * size, cy = r() * size, rad = 1.6 + Math.pow(r(), 2.3) * 8.5, ex = 0.75 + r() * 0.6, tone = 0.3 + r() * 0.7;
+    for (let y = Math.floor(cy - rad); y <= cy + rad; y++) for (let x = Math.floor(cx - rad * ex); x <= cx + rad * ex; x++) {
+      const dx = (x - cx) / (rad * ex), dy = (y - cy) / rad, d2 = dx * dx + dy * dy;
+      if (d2 >= 1) continue;
+      const k = (((y % size) + size) % size) * size + (((x % size) + size) % size), hgt = Math.sqrt(1 - d2) * rad * 0.35;
+      if (hgt > H[k]) { H[k] = hgt; C[k] = tone * (0.7 + 0.3 * Math.sqrt(1 - d2)); }
+    }
+  }
+  const col = new Uint8Array(size * size * 4);
+  for (let k = 0; k < size * size; k++) { const v = Math.min(255, C[k] * 255 * 1.25); col[k * 4] = v; col[k * 4 + 1] = v; col[k * 4 + 2] = Math.min(255, v * 1.04); col[k * 4 + 3] = 255; }
+  return { color: dataTex(col, size), normal: dataTex(normalFromHeight(H, size, 0.5), size) };
+}
+const SC = makeScallops(), GR = makeGravel();
+
+/* environment for glossy reflections: blue cave gradient + bright mouth */
+{
+  const T = pathPos(S_MOUTH + 1, 0), T0 = pathPos(S_MOUTH - 1, 0);
+  const md = new THREE.Vector3(T.x - T0.x, 0.25, T.z - T0.z).normalize();
+  const es = new THREE.Scene();
+  es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 48, 24), new THREE.ShaderMaterial({
+    side: THREE.BackSide, uniforms: { uM: { value: md } },
+    vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform vec3 uM; varying vec3 vP;
+      void main(){ vec3 d = normalize(vP);
+        vec3 c = mix(vec3(0.01, 0.03, 0.08), vec3(0.05, 0.2, 0.55), smoothstep(-0.4, 0.2, d.y));
+        c = mix(c, vec3(0.2, 0.55, 1.0), smoothstep(0.2, 1.0, d.y));
+        c += vec3(1.6, 1.9, 2.2) * pow(max(dot(d, uM), 0.0), 10.0);
+        gl_FragColor = vec4(c, 1.0); }`,
+  })));
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(es, 0.03).texture;
+  pm.dispose();
+}
+
+/* ═════════════════════ 4. Materials ═════════════════════ */
+const uTime = { value: 0 };
+const HASH_GLSL = /* glsl */`
+  float icH(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+  float icN(vec3 p){
+    vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(icH(i), icH(i + vec3(1.0, 0.0, 0.0)), f.x), mix(icH(i + vec3(0.0, 1.0, 0.0)), icH(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+               mix(mix(icH(i + vec3(0.0, 0.0, 1.0)), icH(i + vec3(1.0, 0.0, 1.0)), f.x), mix(icH(i + vec3(0.0, 1.0, 1.0)), icH(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
+  }
+  float icBand(float x, float w0, float w1){ return 1.0 - smoothstep(w0, w1, abs(fract(x) - 0.5)); }`;
+
+/** Glacial ice: emissive "transmitted light" + scallops + ash layers + deep veins + glitter. */
+function makeIceMaterial(hole) {
+  const m = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.2, metalness: 0, normalMap: SC.normal, normalScale: new THREE.Vector2(0.9, 0.9), envMapIntensity: 0.75,
+  });
+  const U = {
+    uTime, uScH: { value: SC.mask }, uGlowK: { value: 1.0 },
+    uDeep: { value: new THREE.Color(0.003, 0.022, 0.11) }, uMid: { value: new THREE.Color(0.008, 0.16, 0.62) },
+    uHigh: { value: new THREE.Color(0.2, 0.66, 1.0) }, uWhite: { value: new THREE.Color(0.85, 0.97, 1.05) },
+    uHole: { value: hole ? new THREE.Vector4(hole.x, hole.z, hole.r, hole.y) : new THREE.Vector4(0, 0, -1, 0) },
+  };
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aIce; varying vec2 vIce; varying vec3 vWPos; varying vec2 vIceUv;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvIce = aIce; vIceUv = uv; vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform vec3 uDeep, uMid, uHigh, uWhite; uniform float uGlowK, uTime; uniform vec4 uHole; uniform sampler2D uScH;
+        varying vec2 vIce; varying vec3 vWPos; varying vec2 vIceUv;
+        ${HASH_GLSL}`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        if (uHole.z > 0.0 && vWPos.y > uHole.w && length(vWPos.xz - uHole.xy) < uHole.z) discard;`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float bandC = vWPos.y * 0.62 + dot(vWPos.xz, vec2(0.085, -0.05)) + icN(vWPos * 0.09) * 1.9;
+        float ashA = icBand(bandC * 0.23, 0.012, 0.06);
+        ashA = max(ashA, icBand(bandC * 0.71 + 0.31, 0.005, 0.03) * 0.75);
+        ashA = max(ashA, icBand(bandC * 1.93 + 0.67, 0.003, 0.018) * 0.45);
+        ashA *= smoothstep(0.3, 0.6, icN(vWPos * 0.045 + 7.3));
+        ashA *= 0.55 + 0.45 * icN(vWPos * vec3(1.6, 6.5, 1.6));
+        ashA = clamp(ashA + vIce.y * 0.45, 0.0, 1.0);
+        float scH = texture2D(uScH, vIceUv).r;
+        diffuseColor.rgb = mix(vec3(0.05, 0.12, 0.21), vec3(0.02, 0.02, 0.024), ashA);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 0.7, ashA) + scH * 0.06;`)
+      .replace('#include <emissivemap_fragment>', `{
+        vec3 Vd = normalize(vWPos - cameraPosition);
+        float inner = icN(vWPos * 0.5 + Vd * 0.9) * 0.6 + icN(vWPos * 0.23 + Vd * 2.4 + 3.1) * 0.4;
+        float g = clamp(vIce.x + (scH - 0.5) * 0.26 + (inner - 0.5) * 0.42, 0.0, 1.0);
+        vec3 ic = mix(uDeep, uMid, smoothstep(0.0, 0.5, g));
+        ic = mix(ic, uHigh, smoothstep(0.45, 0.86, g));
+        ic = mix(ic, uWhite, smoothstep(0.84, 1.0, g));
+        float vein = icN(vWPos * 0.42 + Vd * 1.4 + 11.0);
+        ic += uHigh * (1.0 - smoothstep(0.0, 0.028, abs(vein - 0.5))) * (0.18 + 0.55 * g);
+        float fr = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);
+        ic += uHigh * fr * 0.2 * (0.4 + g);
+        ic *= 1.0 - ashA * 0.93;
+        vec3 gq = vWPos * 7.0; float gh = icH(floor(gq) + 0.37);
+        float gd = length(fract(gq) - 0.5);
+        float tw = pow(max(0.0, sin(dot(Vd, vec3(gh * 91.0, gh * 57.0, gh * 23.0)) * 4.0 + uTime * 1.7 + gh * 40.0)), 14.0);
+        ic += uWhite * step(0.986, gh) * (1.0 - smoothstep(0.06, 0.17, gd)) * tw * 6.0 * (1.0 - ashA);
+        totalEmissiveRadiance = ic * uGlowK;
+      }`);
+  };
+  m.customProgramCacheKey = () => 'ice-cave-wall';
+  return m;
+}
+
+function makeFloorMaterial() {
+  const m = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 1, metalness: 0, map: GR.color, normalMap: GR.normal, normalScale: new THREE.Vector2(0.85, 0.85), envMapIntensity: 0.9,
+  });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 aEmis; attribute vec2 aRI; varying vec3 vEmis; varying vec2 vRI; varying vec3 vWPos;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvEmis = aEmis; vRI = aRI; vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform float uTime; varying vec3 vEmis; varying vec2 vRI; varying vec3 vWPos;
+        ${HASH_GLSL}`)
+      .replace('#include <map_fragment>', `#ifdef USE_MAP
+        vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+        diffuseColor.rgb *= mix(sampledDiffuseColor.rgb, vec3(0.85), vRI.y);
+      #endif`)
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vRI.x;')
+      .replace('#include <normal_fragment_maps>', `#ifdef USE_NORMALMAP_TANGENTSPACE
+        vec3 mapN = texture2D(normalMap, vNormalMapUv).xyz * 2.0 - 1.0;
+        mapN.xy *= normalScale * (1.0 - vRI.y * 0.8);
+        normal = normalize(tbn * mapN);
+      #endif`)
+      .replace('#include <emissivemap_fragment>', `{
+        vec3 Vd = normalize(vWPos - cameraPosition);
+        totalEmissiveRadiance = vEmis;
+        vec3 gq = vWPos * 9.0; float gh = icH(floor(gq) + 0.71);
+        float gd = length(fract(gq) - 0.5);
+        float tw = pow(max(0.0, sin(dot(Vd, vec3(gh * 83.0, gh * 61.0, gh * 29.0)) * 4.0 + uTime * 1.9 + gh * 37.0)), 12.0);
+        totalEmissiveRadiance += vec3(0.85, 0.95, 1.0) * step(0.982, gh) * (1.0 - smoothstep(0.08, 0.2, gd)) * tw * 5.0 * (0.25 + vRI.y);
+      }`);
+  };
+  m.customProgramCacheKey = () => 'ice-cave-floor';
+  return m;
+}
+
+/* ═════════════════════ 5. Geometry ═════════════════════ */
+/** Indexed grid (rows × cols). Flips the winding if the probe normal does not point `expect`-wards. */
+function gridGeometry(rows, cols, attrs, probe, expect) {
+  const geo = new THREE.BufferGeometry();
+  for (const [name, arr, size] of attrs) geo.setAttribute(name, new THREE.BufferAttribute(arr, size));
+  const idx = [];
+  for (let r = 0; r < rows - 1; r++) for (let c = 0; c < cols - 1; c++) {
+    const a = r * cols + c, b = a + 1, d = a + cols, e = d + 1;
+    idx.push(a, d, b, b, d, e);
+  }
+  geo.setIndex(idx); geo.computeVertexNormals();
+  const n = geo.attributes.normal;
+  if (n.getX(probe) * expect[0] + n.getY(probe) * expect[1] + n.getZ(probe) * expect[2] < 0) {
+    for (let i = 0; i < idx.length; i += 3) { const t = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t; }
+    geo.setIndex(idx); geo.computeVertexNormals();
+  }
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+// moulin (skylight) geometry numbers
+const iM = idxAt(S_MOULIN);
+const HOLE_Y = BASE[iM] + HOFF[iM] + RY[iM] * Math.sqrt(Math.max(0, 1 - ((0.6 + RH) / RX[iM]) ** 2)) - 0.3;
+const SHAFT_TOP = HOLE_Y + 18;
+
+// ice arch
+const iceMat = makeIceMaterial({ x: MOU.x, z: MOU.z, r: RH, y: HOLE_Y });
+const archGeo = gridGeometry(I_ARCH + 1, NV, [['position', ARCH.pos, 3], ['uv', ARCH.uv, 2], ['aIce', ARCH.ice, 2]],
+  idxAt(70) * NV + (RING >> 1), [0, -1, 0]);
+const arch = new THREE.Mesh(archGeo, iceMat); arch.name = 'ice-arch';
+scene.add(arch);
+
+// moulin shaft: an inward-facing ice chimney that rises out of the hole
+{
+  const K = 14, J = 40, cols = J + 1, n = (K + 1) * cols;
+  const pos = new Float32Array(n * 3), uv = new Float32Array(n * 2), ice = new Float32Array(n * 2);
+  for (let k = 0; k <= K; k++) for (let j = 0; j <= J; j++) {
+    const f = k / K, a = (j / J) * Math.PI * 2, y = lerp(HOLE_Y - 0.05, SHAFT_TOP, f * f * 0.7 + f * 0.3);
+    const rr = (RH + 0.03) * (1 + 0.45 * f) + smoothstep(0.03, 0.4, f) * 0.45 * n3(Math.cos(a) * 1.5 + 4, y * 0.25, Math.sin(a) * 1.5);
+    const o = k * cols + j;
+    pos.set([MOU.x + Math.cos(a) * rr, y, MOU.z + Math.sin(a) * rr], o * 3);
+    uv.set([(j / J) * 2.2, (y - HOLE_Y) / 4.5], o * 2);
+    ice.set([0.7 + 0.3 * f, 0], o * 2);
+  }
+  const geo = gridGeometry(K + 1, cols, [['position', pos, 3], ['uv', uv, 2], ['aIce', ice, 2]], (K >> 1) * cols, [-1, 0, 0]);
+  scene.add(new THREE.Mesh(geo, makeIceMaterial(null)));
+  const sky = new THREE.Mesh(new THREE.CircleGeometry(RH * 1.75, 40).rotateX(Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 2.9, 3.2), fog: false, side: THREE.DoubleSide }));
+  sky.position.set(MOU.x, SHAFT_TOP - 0.2, MOU.z); scene.add(sky);
+  const g = helpers.createGlow({ color: 0xe6f7ff, size: 7.5, opacity: 0.8 }); g.position.set(MOU.x, HOLE_Y + 0.6, MOU.z); scene.add(g);
+}
+
+// floor: gravel path, glossy ice banks, puddles, snow drifts at the mouth & under the skylight
+{
+  const FC = 30, cols = FC + 1, I_FLOOR = Math.min(NS, idxAt(S_MOUTH + 0.8)), rows = I_FLOOR + 1, n = rows * cols;
+  const pos = new Float32Array(n * 3), uv = new Float32Array(n * 2), col = new Float32Array(n * 3), emis = new Float32Array(n * 3), ri = new Float32Array(n * 2);
+  const cG = new THREE.Color(0x202328), cG2 = new THREE.Color(0x3a3e46), cI = new THREE.Color(0x4f97d4), cS = new THREE.Color(0xeef5ff), c = new THREE.Color();
+  for (let i = 0; i < rows; i++) {
+    const s = i * DS, ext = Math.max(RX[i], 0.2) + 0.9;
+    for (let j = 0; j < cols; j++) {
+      const u = -ext + (2 * ext * j) / FC, x = PX[i] + NX[i] * u, z = PZ[i] + NZ[i] * u, y = floorAt(s, u, x, z), o = i * cols + j;
+      pos.set([x, y, z], o * 3); uv.set([u / 2.6, s / 2.6], o * 2);
+      const a = Math.abs(u) / Math.max(RX[i], 0.3);
+      let ice = Math.max(smoothstep(0.5, 0.95, a), smoothstep(0.12, 0.42, fbm(x * 0.11 + 3, z * 0.11, 3)));
+      const dm2 = (x - MOU.x) ** 2 + (z - MOU.z) ** 2;
+      const snow = Math.max(smoothstep(S_MOUTH - 8, S_MOUTH, s) * (0.65 + 0.35 * noise2D(x * 0.4, z * 0.4)), Math.exp(-dm2 / 7));
+      let wet = 0;
+      for (const p of PUDDLES) wet = Math.max(wet, 1 - smoothstep(p.r * 0.9, p.r * 1.35, Math.hypot(x - p.x, z - p.z)));
+      ice = Math.max(ice, wet) * (1 - snow);
+      c.copy(cG).lerp(cG2, 0.5 + 0.5 * noise2D(x * 0.5, z * 0.5)).lerp(cI, ice).lerp(cS, snow);
+      col.set([c.r, c.g, c.b], o * 3);
+      const light = 0.12 + 1.0 * Math.exp(-Math.max(0, S_MOUTH - s) / 5.5) + 0.85 * Math.exp(-dm2 / 12);
+      const ik = ice * (0.05 + 0.4 * light) * (1 - 0.6 * wet), sk = snow * light * 0.75;
+      const bo = (0.6 + light) * (1 - snow);                                         // blue bounce light from the walls
+      emis.set([0.02 * ik + 0.78 * sk + 0.004 * bo, 0.16 * ik + 0.88 * sk + 0.016 * bo, 0.5 * ik + 1.0 * sk + 0.045 * bo], o * 3);
+      ri.set([lerp(lerp(0.88, 0.12, ice), 0.75, snow), ice], o * 2);
+    }
+  }
+  const geo = gridGeometry(rows, cols, [['position', pos, 3], ['uv', uv, 2], ['color', col, 3], ['aEmis', emis, 3], ['aRI', ri, 2]],
+    idxAt(60) * cols + (FC >> 1), [0, 1, 0]);
+  const floor = new THREE.Mesh(geo, makeFloorMaterial()); floor.receiveShadow = true; floor.name = 'cave-floor';
+  scene.add(floor);
+}
+
+// meltwater puddles (engine water shader; the floor dips below WATER there)
+for (const p of PUDDLES) {
+  const water = helpers.createWater({ radius: p.r * 0.97, segments: 32, level: WATER, color: 0x5fb8ec, deepColor: 0x06223f, waveAmp: 0.008, waveScale: 3,
+    speed: 0.6, opacity: 0.9, roughness: 0.04, glow: 0.12, reflect: 0.45, sparkle: 0.5 });
+  water.position.set(p.x, WATER, p.z); scene.add(water);
+}
+
+/* ═════════════════════ 6. Daylight beyond the mouth ═════════════════════ */
+const iMo = Math.min(NS, idxAt(S_MOUTH + 0.8));
+const MO = { x: PX[iMo], z: PZ[iMo], tx: TX[iMo], tz: TZ[iMo], nx: NX[iMo], nz: NZ[iMo], y: floorAt(S_MOUTH + 0.8, 0, PX[iMo], PZ[iMo]) };
+{
+  // glacier forefield: bright snow plane
+  const A = 46, B = 24, cols = A + 1, rows = B + 1, n = cols * rows, pos = new Float32Array(n * 3);
+  for (let b = 0; b < rows; b++) for (let a = 0; a < cols; a++) {
+    const la = (a / A - 0.5) * 90, lb = -0.4 + Math.pow(b / B, 1.6) * 50, x = MO.x + MO.tx * lb + MO.nx * la, z = MO.z + MO.tz * lb + MO.nz * la;
+    const y = MO.y - 0.03 + 0.05 * Math.max(0, lb - 2) + smoothstep(1, 10, lb) * (0.35 * fbm(x * 0.05, z * 0.05, 3) + 0.004 * la * la * 0.1);
+    pos.set([x, y, z], (b * cols + a) * 3);
+  }
+  const geo = gridGeometry(rows, cols, [['position', pos, 3]], (B >> 1) * cols + (A >> 1), [0, 1, 0]);
+  scene.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xf2f7ff, roughness: 0.95, emissive: 0xcfe6ff, emissiveIntensity: 1.25, envMapIntensity: 0.3, fog: false })));
+
+  // daylight dome (only ever seen through the mouth): white snowfield, distant peaks, pale sky
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(80, 48, 24), new THREE.ShaderMaterial({
+    side: THREE.BackSide, fog: false, depthWrite: false,
+    uniforms: { uSun: { value: new THREE.Vector3(MO.tx * 0.6 - MO.nx * 0.5, 0.35, MO.tz * 0.6 - MO.nz * 0.5).normalize() } },
+    vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: /* glsl */`uniform vec3 uSun; varying vec3 vD;
+      void main(){
+        vec3 d = normalize(vD); float el = d.y, az = atan(d.x, d.z);
+        float ridge = 0.03 + 0.06 * (0.5 + 0.5 * sin(az * 5.0 + 1.3)) * (0.6 + 0.4 * sin(az * 13.0 + 0.2)) + 0.01 * sin(az * 37.0);
+        vec3 sky = mix(vec3(2.4, 2.6, 2.8), vec3(0.55, 0.95, 1.7), smoothstep(ridge, ridge + 0.55, el));
+        vec3 mtn = mix(vec3(0.85, 1.05, 1.35), vec3(1.7, 1.9, 2.1), smoothstep(ridge - 0.035, ridge, el));
+        vec3 c = mix(mtn, sky, smoothstep(ridge - 0.003, ridge + 0.003, el));
+        c = mix(vec3(2.3, 2.45, 2.6), c, smoothstep(-0.02, 0.012, el));
+        c += vec3(1.3, 1.15, 0.95) * pow(max(dot(d, uSun), 0.0), 9.0) * 1.4;
+        gl_FragColor = vec4(c, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  }));
+  dome.position.set(MO.x, MO.y + 1.2, MO.z); dome.renderOrder = -10; dome.frustumCulled = false;
+  scene.add(dome);
+
+  // soft glowing haze hanging in the mouth (fades as you walk through it)
+  const hazeMat = (k) => new THREE.ShaderMaterial({
+    uniforms: { uK: { value: k }, uColor: { value: new THREE.Color(0.75, 0.9, 1.0) } },
+    vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vec4 w4 = modelMatrix * vec4(position, 1.0); vW = w4.xyz; gl_Position = projectionMatrix * viewMatrix * w4; }',
+    fragmentShader: /* glsl */`uniform float uK; uniform vec3 uColor; varying vec2 vUv; varying vec3 vW;
+      void main(){
+        float r = length((vUv - vec2(0.5, 0.42)) * vec2(2.0, 2.1));
+        float a = pow(1.0 - smoothstep(0.0, 1.0, r), 2.0) * uK * smoothstep(1.5, 5.0, distance(cameraPosition, vW));
+        gl_FragColor = vec4(uColor * a, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+  });
+  [[0.8, 0.2], [2.8, 0.15], [5.4, 0.1]].forEach(([back, k]) => {
+    const s = S_MOUTH - back, i = idxAt(s), p = pathPos(s, 0);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(RX[i] * 2.2, RY[i] * 2.1), hazeMat(k));
+    m.position.set(p.x, BASE[i] + HOFF[i] + RY[i] * 0.35, p.z);
+    m.lookAt(p.x + TX[i], m.position.y, p.z + TZ[i]);
+    m.renderOrder = 9; scene.add(m);
+  });
+}
+
+/* ═════════════════════ 7. Lights ═════════════════════ */
+{
+  const pm = pathPos(S_MOUTH - 2.5, 0), im = idxAt(S_MOUTH - 2.5);
+  const mouth = new THREE.PointLight(0xe3f4ff, 70, 34, 1.35); mouth.position.set(pm.x, BASE[im] + 4.2, pm.z); scene.add(mouth);
+  const sky = new THREE.PointLight(0xdcf2ff, 70, 22, 1.4); sky.position.set(MOU.x, HOLE_Y - 0.6, MOU.z); scene.add(sky);
+  const pf = pathPos(66, 0), fill = new THREE.PointLight(0x3d8bff, 30, 28, 1.2); fill.position.set(pf.x, BASE[idxAt(66)] + 3.6, pf.z); scene.add(fill);
+  const lamp = w.player.children.find((c) => c.isPointLight);          // the traveler's lantern
+  if (lamp) { lamp.color.set(0xffe2c4); lamp.intensity = 6; lamp.distance = 11; }
+}
+
+/* ═════════════════════ 8. Icicles, drips, rocks, ice blocks ═════════════════════ */
+const R = rand(77);
+const ICICLES = [];
+function addIcicle(i, th, len, rad, force = false) {
+  i = clamp(i, 1, I_ARCH - 1);
+  const v = archVertex(i, th), x = v.x, y = v.y + 0.12, z = v.z;
+  if (Math.hypot(x - MOU.x, z - MOU.z) < RH + 0.6) return null;                          // nothing hangs in the skylight
+  const s = i * DS, fl = floorAt(s, v.lat, x, z);
+  const walk = Math.abs(v.lat) < limAt(s, v.lat) + 0.8 && s < S_WALK1 + 0.5;
+  if (walk && !force) len = Math.min(len, y - fl - 2.9);                                  // keep heads (and the camera) clear
+  if (len < 0.16) return null;
+  const ic = { x, y, z, len, rad: rad ?? 0.05 + len * 0.075, ry: R() * 6.28, tx: (R() - 0.5) * 0.08, tz: (R() - 0.5) * 0.08 };
+  ICICLES.push(ic);
+  return ic;
+}
+// fringe of icicles on the mouth's lip, silhouetted against the daylight
+for (let n = 0; n < 80; n++) {
+  const th = 0.4 + (Math.PI - 0.8) * ((n + R() * 0.7) / 80), top = 1 - Math.abs(th - Math.PI / 2) / (Math.PI / 2);
+  addIcicle(I_ARCH - 1 - Math.floor(R() * 4), th, (0.2 + R() * 0.55 + top * 0.95) * (R() < 0.15 ? 1.6 : 1), undefined, true);
+}
+// clusters along cracks + loners
+for (let c = 0; c < 17; c++) {
+  const sc = lerp(15, S_MOUTH - 5, R()), thc = Math.PI / 2 + (R() - 0.5) * 1.5, cnt = 10 + Math.floor(R() * 18);
+  for (let n = 0; n < cnt; n++) addIcicle(idxAt(sc + (R() - 0.5) * 5), thc + (R() - 0.5) * 0.7, 0.3 + Math.pow(R(), 1.8) * 2.2);
+}
+for (let n = 0; n < 110; n++) addIcicle(idxAt(lerp(14, S_MOUTH - 1, R())), Math.PI / 2 + (R() - 0.5) * 1.8, 0.2 + Math.pow(R(), 2) * 1.6);
+
+// drip emitters: an icicle above a puddle / the floor, dropping water every few seconds
+const DRIPS = [];
+function addDrip(x, z, period, phase) {
+  const L = locate(x, z), i = Math.min(I_ARCH - 1, idxAt(L.s));
+  let lo = 0.3, hi = Math.PI - 0.3;
+  for (let k = 0; k < 24; k++) { const mid = (lo + hi) / 2; if (archVertex(i, mid).lat > L.u) lo = mid; else hi = mid; }
+  const ic = addIcicle(i, (lo + hi) / 2, 0.55 + R() * 0.45, 0.075);
+  if (!ic) return;
+  const tip = ic.y - ic.len, ground = heightAt(ic.x, ic.z), wet = ground < WATER;
+  DRIPS.push({ x: ic.x, z: ic.z, y0: tip - 0.02, y1: Math.max(ground, WATER) + 0.01, wet, period, phase, cyc: -1, hit: false });
+}
+PUDDLES.forEach((p, k) => { addDrip(p.x + 0.4, p.z - 0.3, 2.3 + k * 0.37, k * 0.9); addDrip(p.x - 0.6, p.z + 0.5, 3.1 + k * 0.29, k * 1.7 + 0.4); });
+[[27, -2.0], [70, 1.8], [93, -0.9], [S_MOUTH - 5, 1.6], [S_MOUTH - 15, -1.2]].forEach(([s, u], k) => { const p = pathPos(s, u); addDrip(p.x, p.z, 2.6 + k * 0.45, k * 1.3); });
+
+{
+  const geo = new THREE.ConeGeometry(1, 1, 7, 5, true);
+  geo.rotateX(Math.PI); geo.translate(0, -0.5, 0);                          // base at y=0, tip at y=−1
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
+    const k = 1 + 0.16 * Math.sin(y * 17 + a * 2) + 0.08 * Math.sin(a * 3 + 1.3);
+    p.setXYZ(i, x * k, y, z * k);
+  }
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xbfe9ff, roughness: 0.06, metalness: 0, emissive: 0x1d6fe0, emissiveIntensity: 0.55, envMapIntensity: 1.4 });
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vTip;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTip = clamp(-position.y, 0.0, 1.0);');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vTip;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { float fr = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 2.2);
+          totalEmissiveRadiance += vec3(0.75, 0.93, 1.0) * (fr * 0.9 + pow(vTip, 7.0) * 2.4); }`);
+  };
+  mat.customProgramCacheKey = () => 'ice-cave-icicle';
+  const mesh = new THREE.InstancedMesh(geo, mat, ICICLES.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), t = new THREE.Vector3(), c = new THREE.Color();
+  ICICLES.forEach((ic, i) => {
+    e.set(ic.tx, ic.ry, ic.tz); q.setFromEuler(e); sc.set(ic.rad, ic.len, ic.rad); t.set(ic.x, ic.y, ic.z);
+    m4.compose(t, q, sc); mesh.setMatrixAt(i, m4);
+    c.setHSL(0.55 + R() * 0.04, 0.7, 0.75 + R() * 0.2); mesh.setColorAt(i, c);
+  });
+  mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere(); mesh.name = 'icicles';
+  scene.add(mesh);
+}
+
+// dark moraine stones at the foot of the walls + a few pebbles to hop over
+{
+  const list = [];
+  for (let n = 0; n < 46; n++) {
+    const s = lerp(14, S_MOUTH - 3, R()), side = R() < 0.5 ? -1 : 1, lim = limAt(s, side);
+    const p = pathPos(s, side * (lim + 0.15 + R() * 0.7));
+    list.push({ x: p.x, z: p.z, s: 0.25 + Math.pow(R(), 1.5) * 0.75 });
+  }
+  for (let n = 0; n < 14; n++) {
+    const s = lerp(16, S_MOUTH - 4, R()), p = pathPos(s, (R() - 0.5) * 2 * limAt(s, 1) * 0.7);
+    if (Math.hypot(p.x - SP.x, p.z - SP.z) < 3 || PUDDLES.some((q) => Math.hypot(p.x - q.x, p.z - q.z) < q.r + 0.5)) continue;
+    list.push({ x: p.x, z: p.z, s: 0.16 + R() * 0.16 });
+  }
+  scene.add(helpers.createRocks({ positions: list, color: 0x2a2c31, roughness: 0.55, seed: 12, squash: 0.65 }));
+}
+// clear blue ice boulders fallen from the roof
+[[24, 1], [45, -1], [57, 1], [74, -1], [88, 1], [S_MOUTH - 9, -1]].forEach(([s, side], k) => {
+  const size = 0.7 + R() * 0.8, p = pathPos(s, side * (limAt(s, side) - 0.1));
+  const m = helpers.createIce({ size, seed: k + 3, color: 0x9ad8ff, emissive: 0x0b4f9a, emissiveIntensity: 0.7, stretch: [1.1, 0.8, 0.9] });
+  m.position.set(p.x, heightAt(p.x, p.z) + size * 0.3, p.z); m.rotation.y = R() * 6.28; m.castShadow = false;
+  scene.add(m); w.addCollider({ x: p.x, z: p.z, r: size * 0.85 });
+});
+
+/* ═════════════════════ 9. Light shafts, sparkles, snow in the skylight ═════════════════════ */
+function lightShaft(top, bottom, r0, r1, color, k) {
+  const len = top.distanceTo(bottom);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uTime, uColor: { value: new THREE.Color(color) }, uK: { value: k } },
+    vertexShader: 'varying vec3 vN; varying vec3 vW; varying vec2 vUv; void main(){ vUv = uv; vN = normalize(mat3(modelMatrix) * normal); vec4 w4 = modelMatrix * vec4(position, 1.0); vW = w4.xyz; gl_Position = projectionMatrix * viewMatrix * w4; }',
+    fragmentShader: /* glsl */`uniform vec3 uColor; uniform float uK, uTime; varying vec3 vN; varying vec3 vW; varying vec2 vUv;
+      float h1(float n){ return fract(sin(n) * 43758.5453); }
+      float n1(float x){ float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h1(i), h1(i + 1.0), f); }
+      void main(){
+        vec3 V = normalize(cameraPosition - vW);
+        float a = pow(abs(dot(normalize(vN), V)), 2.2);
+        a *= smoothstep(0.0, 0.22, vUv.y) * (1.0 - smoothstep(0.78, 1.0, vUv.y));
+        a *= 0.5 + 0.5 * n1(vUv.x * 26.0 + uTime * 0.15) * n1(vUv.x * 9.0 - uTime * 0.08 + 4.0);
+        a *= uK * smoothstep(0.6, 3.5, distance(cameraPosition, vW));
+        gl_FragColor = vec4(uColor * a, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+  });
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, len, 40, 1, true), mat);
+  m.position.copy(top).add(bottom).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), top.clone().sub(bottom).normalize());
+  m.renderOrder = 8;
+  return m;
+}
+const MOU_FLOOR = heightAt(MOU.x, MOU.z);
+scene.add(lightShaft(new THREE.Vector3(MOU.x, HOLE_Y + 3, MOU.z), new THREE.Vector3(MOU.x + 0.5, MOU_FLOOR, MOU.z + 0.3), 1.45, 2.7, 0xd5efff, 0.3));
+scene.add(lightShaft(new THREE.Vector3(MOU.x, HOLE_Y + 3, MOU.z), new THREE.Vector3(MOU.x + 0.3, MOU_FLOOR, MOU.z + 0.15), 0.8, 1.6, 0xffffff, 0.22));
+
+// glittering ice crystals drifting in the air
+scene.add(helpers.createParticles({ count: 1500, area: 34, height: 12, speed: 0.12, size: 0.05, color: 0xcdefff, opacity: 0.75, sway: 0.35, blending: 'additive', seed: 5 }));
+
+// snow sifting down through the skylight
+const pxScale = { value: 900 };
+const updatePx = () => { pxScale.value = (window.innerHeight * renderer.getPixelRatio()) / (2 * Math.tan((camera.fov * Math.PI) / 360)); };
+updatePx(); window.addEventListener('resize', updatePx);
+{
+  const N = 260, r = rand(31), pos = new Float32Array(N * 3), seed = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) { const a = r() * 6.283, d = Math.sqrt(r()) * 1.9; pos.set([MOU.x + Math.cos(a) * d, r(), MOU.z + Math.sin(a) * d], i * 3); seed.set([r(), r()], i * 2); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 2));
+  const pts = new THREE.Points(geo, new THREE.ShaderMaterial({
+    uniforms: { uTime, uPx: pxScale, uY0: { value: MOU_FLOOR + 0.1 }, uY1: { value: HOLE_Y + 5 } },
+    vertexShader: /* glsl */`uniform float uTime, uPx, uY0, uY1; attribute vec2 aSeed; varying float vA;
+      void main(){
+        float span = uY1 - uY0, t = uTime * (0.35 + 0.35 * aSeed.x);
+        float f = fract(position.y - t * 0.6 / span);
+        vec3 p = vec3(position.x + sin(uTime * 0.7 + aSeed.y * 6.28) * 0.35 * (1.0 - f), uY0 + f * span, position.z + cos(uTime * 0.55 + aSeed.x * 6.28) * 0.3 * (1.0 - f));
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = max(1.0, (0.035 + 0.04 * aSeed.y) * uPx / -mv.z);
+        vA = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.75, 1.0, f)) * (0.6 + 0.4 * sin(uTime * 3.0 + aSeed.x * 40.0));
+      }`,
+    fragmentShader: /* glsl */`varying float vA;
+      void main(){ float d = length(gl_PointCoord - 0.5); float a = (1.0 - smoothstep(0.0, 0.5, d)) * vA;
+        gl_FragColor = vec4(vec3(0.9, 0.97, 1.0) * a * 1.6, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  }));
+  pts.frustumCulled = false; pts.renderOrder = 21; scene.add(pts);
+}
+
+/* drops + ripple rings (one draw call each) */
+const dropMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8),
+  new THREE.MeshStandardMaterial({ color: 0xe8f8ff, roughness: 0.05, metalness: 0, emissive: 0x9fe0ff, emissiveIntensity: 1.6 }), Math.max(1, DRIPS.length));
+dropMesh.frustumCulled = false; scene.add(dropMesh);
+const RIP_N = 28;
+const ripMesh = new THREE.InstancedMesh(new THREE.RingGeometry(0.86, 1, 48).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }), RIP_N);
+ripMesh.frustumCulled = false; ripMesh.renderOrder = 7; scene.add(ripMesh);
+const RIPS = Array.from({ length: RIP_N }, () => ({ life: 1, x: 0, y: 0, z: 0, max: 0.5 }));
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _t = new THREE.Vector3(), _col = new THREE.Color();
+const RIP_TINT = new THREE.Color(0.75, 0.93, 1.0), ZERO = new THREE.Vector3(0, 0, 0);
+for (let i = 0; i < RIP_N; i++) { _m4.compose(ZERO, _q, ZERO); ripMesh.setMatrixAt(i, _m4); ripMesh.setColorAt(i, _col.setRGB(0, 0, 0)); }
+function spawnRipple(x, y, z, max, delay = 0) {
+  let r = RIPS.find((q) => q.life >= 1); if (!r) r = RIPS[0];
+  Object.assign(r, { x, y, z, max, life: -delay });
+}
+
+/* ═════════════════════ 10. Sound (opt-in): cave hum + reverb drips ═════════════════════ */
+const AUD = { ctx: null, on: false, master: null, verb: null };
+function initAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return false;
+  const ctx = new AC(), sr = ctx.sampleRate;
+  const master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
+  const verb = ctx.createConvolver(), len = Math.floor(sr * 2.8), ir = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+  verb.buffer = ir; const wet = ctx.createGain(); wet.gain.value = 0.5; verb.connect(wet); wet.connect(master);
+  const nb = ctx.createBuffer(1, sr * 4, sr), nd = nb.getChannelData(0); let last = 0;
+  for (let i = 0; i < nd.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; nd[i] = last * 3.5; }
+  const src = ctx.createBufferSource(); src.buffer = nb; src.loop = true;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
+  const lfo = ctx.createOscillator(), lfoG = ctx.createGain(); lfo.frequency.value = 0.06; lfoG.gain.value = 180; lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start();
+  const amb = ctx.createGain(); amb.gain.value = 0.32; src.connect(lp); lp.connect(amb); amb.connect(master); amb.connect(verb); src.start();
+  Object.assign(AUD, { ctx, master, verb });
+  return true;
+}
+function plink(x, y, z) {
+  if (!AUD.on || !AUD.ctx) return;
+  const dist = camera.position.distanceTo(_t.set(x, y, z));
+  if (dist > 26) return;
+  const ctx = AUD.ctx, t0 = ctx.currentTime, vol = 0.22 / (1 + dist * 0.3);
+  _t.applyMatrix4(camera.matrixWorldInverse);
+  const o = ctx.createOscillator(), g = ctx.createGain(), f = 1100 + Math.random() * 900;
+  o.type = 'sine'; o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f * 0.45, t0 + 0.09);
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+  o.connect(g);
+  let out = g;
+  if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = clamp(_t.x / 6, -1, 1); g.connect(p); out = p; }
+  out.connect(AUD.master); out.connect(AUD.verb);
+  o.start(t0); o.stop(t0 + 0.22);
+}
+{
+  const bar = document.querySelector('.w-actions');
+  if (bar) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'w-btn glass ic-sound'; btn.setAttribute('aria-pressed', 'false'); btn.textContent = '🔈 聲音';
+    const toggle = () => {
+      if (!AUD.ctx && !initAudio()) { btn.disabled = true; return; }
+      AUD.on = !AUD.on; AUD.ctx.resume?.();
+      AUD.master.gain.setTargetAtTime(AUD.on ? 0.9 : 0, AUD.ctx.currentTime, 0.35);
+      btn.textContent = AUD.on ? '🔊 聲音' : '🔈 聲音'; btn.setAttribute('aria-pressed', String(AUD.on));
+      w.toast(AUD.on ? '戴上耳機，聽冰在滴水' : '已靜音', 1800);
+    };
+    btn.addEventListener('click', () => { btn.blur(); toggle(); });
+    window.addEventListener('keydown', (e) => { if (e.code === 'KeyM' && !e.repeat) toggle(); });
+    bar.insertBefore(btn, bar.lastElementChild);
+  }
+}
+
+/* ═════════════════════ 11. Per-frame: walls, camera, drips ═════════════════════ */
+let endToastT = -99;
+function clampPlayer(t) {
+  const p = w.player.position, v = w.player.velocity, L = locate(p.x, p.z);
+  let ds = 0, du = 0;
+  if (L.s < S_WALK0) ds = S_WALK0 - L.s; else if (L.s > S_WALK1) ds = S_WALK1 - L.s;
+  const lim = limAt(L.s + ds, L.u);
+  if (L.u > lim) du = lim - L.u; else if (L.u < -lim) du = -lim - L.u;
+  if (!ds && !du) return;
+  const mx = L.tx * ds + L.nx * du, mz = L.tz * ds + L.nz * du, ml = Math.hypot(mx, mz);
+  p.x += mx; p.z += mz;
+  if (ds) {                                   // open ends (daylight / dead end): stop, don't slide
+    v.x = 0; v.z = 0;
+    if (t - endToastT > 6) { endToastT = t; w.toast(ds < 0 ? '外面風雪正大，我們留在冰洞裡吧' : '前方的縫隙太窄了，過不去', 2200); }
+  } else if (ml > 1e-6) {                     // ice walls: slide along them
+    const nx = mx / ml, nz = mz / ml, vn = v.x * nx + v.z * nz;
+    if (vn < 0) { v.x -= vn * nx; v.z -= vn * nz; }
+  }
+  const g = w.groundAt(p.x, p.z);
+  if (p.y < g) p.y = g;
+}
+
+const INTRO = 4.8;
+const camK = { k: 1, shift: 0 };
+/** Fraction (0..1) of the segment origin→origin+d that stays inside the ice with `margin` to spare. */
+function freeK(ox, oy, oz, dx, dy, dz) {
+  const N = 22;
+  for (let i = 1; i <= N; i++) {
+    const k = (i / N) * (i / N) * 0.35 + (i / N) * 0.65;          // finer steps near the traveler
+    if (!insideCave(ox + dx * k, oy + dy * k, oz + dz * k, 0.4)) {
+      const j = i - 1; return (j / N) * (j / N) * 0.35 + (j / N) * 0.65;
+    }
+  }
+  return 1;
+}
+const _f = new THREE.Vector3(), _look = new THREE.Vector3(), _piv = new THREE.Vector3(), _d = new THREE.Vector3(), _c = new THREE.Vector3();
+const _ip = new THREE.Vector3(), _il = new THREE.Vector3(), _pp = {};
+const easeIO = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+function updateCamera(dt, t) {
+  const P = w.player.position, C = camera.position;
+  camera.getWorldDirection(_f);
+  const hd = Math.hypot(C.x - P.x, C.z - P.z), fh = Math.hypot(_f.x, _f.z);
+  _look.copy(C).addScaledVector(_f, hd / Math.max(fh, 0.3));      // the engine's aim point
+  _piv.set(P.x, P.y + 1.35, P.z);
+  _d.subVectors(C, _piv);
+  const D = _d.length();
+  // keep the camera inside the ice: march from the traveler's head toward the desired camera spot;
+  // when hugging a wall, slide the pivot toward the tunnel centre so the camera has room
+  const L = locate(P.x, P.z), side = L.u >= 0 ? 1 : -1, cx = -L.nx * side, cz = -L.nz * side, room = Math.min(1.4, Math.abs(L.u));
+  const k0 = freeK(_piv.x, _piv.y, _piv.z, _d.x, _d.y, _d.z);
+  let want = 0;
+  if (k0 * D < Math.min(2.6, D * 0.6) && room > 0.25) {
+    const k1 = freeK(_piv.x + cx * room, _piv.y + 0.25 * room, _piv.z + cz * room, _d.x, _d.y, _d.z);
+    if (k1 * D > k0 * D + 0.4) want = room;
+  }
+  camK.shift += (want - camK.shift) * (1 - Math.exp(-4 * dt));
+  const sh = camK.shift, ox = _piv.x + cx * sh, oy = _piv.y + 0.25 * sh, oz = _piv.z + cz * sh;
+  const kMax = Math.max(sh > 0.02 ? freeK(ox, oy, oz, _d.x, _d.y, _d.z) : k0, 0.06);
+  camK.k = kMax < camK.k ? kMax : camK.k + (kMax - camK.k) * (1 - Math.exp(-2.5 * dt));
+  _c.set(ox, oy, oz).addScaledVector(_d, camK.k);
+  // opening shot: glide down the blue tunnel toward the light, settling behind the traveler
+  if (t < INTRO) {
+    const tn = clamp((t - 0.15) / (INTRO - 0.15), 0, 1), e = easeIO(tn), s = lerp(S_SPAWN - 27, S_SPAWN - 7, e);
+    pathPos(s, 0, _pp); _ip.set(_pp.x, BASE[idxAt(s)] + lerp(2.6, 2.3, e), _pp.z);
+    pathPos(s + 14, 0, _pp); _il.set(_pp.x, BASE[idxAt(s + 14)] + 2.7, _pp.z);
+    const b = smoothstep(0.5, 1.0, tn);
+    _c.lerpVectors(_ip, _c, b); _look.lerpVectors(_il, _look, b);
+  }
+  C.copy(_c); camera.lookAt(_look);
+}
+
+const DROP_HIDE = new THREE.Vector3(0, -999, 0);
+function updateDrips(dt, t) {
+  for (let i = 0; i < DRIPS.length; i++) {
+    const d = DRIPS[i], tt = t + d.phase, cyc = Math.floor(tt / d.period), ph = tt - cyc * d.period;
+    if (cyc !== d.cyc) { d.cyc = cyc; d.hit = false; }
+    const FORM = 0.75, tf = ph - FORM;
+    let y = d.y0, sx = 0.04, sy = 0.04;
+    if (tf < 0) { const g = ph / FORM; sx = sy = 0.042 * g; y = d.y0 - 0.035 * g; sy *= 1 + 0.4 * g; }
+    else { y = d.y0 - 0.035 - 4.9 * tf * tf; sx = 0.034; sy = 0.075; }
+    if (y <= d.y1) {
+      _m4.compose(DROP_HIDE, _q, ZERO);
+      if (!d.hit) {
+        d.hit = true;
+        spawnRipple(d.x, d.y1, d.z, d.wet ? 0.75 : 0.32);
+        if (d.wet) spawnRipple(d.x, d.y1, d.z, 0.5, 0.22);
+        plink(d.x, d.y1, d.z);
+      }
+    } else { _t.set(d.x, y, d.z); _s.set(sx, sy, sx); _m4.compose(_t, _q.identity(), _s); }
+    dropMesh.setMatrixAt(i, _m4);
+  }
+  dropMesh.instanceMatrix.needsUpdate = true;
+  for (let i = 0; i < RIP_N; i++) {
+    const r = RIPS[i];
+    if (r.life >= 1) continue;
+    r.life = Math.min(1, r.life + dt / 1.25);
+    const l = Math.max(0, r.life), a = r.life < 0 ? 0 : (1 - l) * (1 - l) * 0.9;
+    _t.set(r.x, r.y + 0.012, r.z); _s.setScalar(r.life >= 1 ? 0 : 0.04 + l * r.max);
+    _m4.compose(_t, _q.identity(), _s); ripMesh.setMatrixAt(i, _m4);
+    ripMesh.setColorAt(i, _col.copy(RIP_TINT).multiplyScalar(a));
+  }
+  ripMesh.instanceMatrix.needsUpdate = true; if (ripMesh.instanceColor) ripMesh.instanceColor.needsUpdate = true;
+}
+
+w.onUpdate((dt, t) => {
+  uTime.value = t;
+  clampPlayer(t);
+  updateCamera(dt, t);
+  updateDrips(dt, t);
+});
+
+w.start();
+</script>
+</body>
+</html>

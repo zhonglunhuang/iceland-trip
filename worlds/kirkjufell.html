@@ -12,7 +12,7 @@
     "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }}
   </script>
-  <link rel="stylesheet" href="world.css?v=10041641">
+  <link rel="stylesheet" href="world.css?v=10041652">
 </head>
 <body>
 <div class="w-loading"><div class="w-loading-inner">
@@ -148,7 +148,7 @@ function baseLand(x, z) {
   h += 6.2 * Math.exp(-((x - 0) ** 2 + (z - 24) ** 2) / 300);
   // coast: soft black-sand beach, then the sea floor
   const zc = coastZ(x);
-  h = lerp(0.35 + 0.2 * noise2D(x * 0.1, z * 0.1), h, smoothstep(zc + 1, zc + 24, z));
+  h = lerp(0.35 + 0.2 * noise2D(x * 0.1, z * 0.1), h, smoothstep(zc + 1, zc + 15, z));
   h = lerp(h, -4.2, smoothstep(zc, zc - 16, z));
   return h;
 }
@@ -177,11 +177,11 @@ const w = await createWorld({
   background: FOG,
   fog: { color: FOG, near: 70, far: 660 },
   sky: { top: 0x01030b, horizon: FOG, bottom: 0x050c13, glow: 0.2 },
-  sun: { color: 0xb3c9ff, intensity: 1.35, dir: [0.72, 0.5, -0.48] },       // moon, right-back
+  sun: { color: 0xb3c9ff, intensity: 1.4, dir: [0.85, 0.5, -0.08] },        // moon, from the right (side-lights Kirkjufell)
   hemi: { sky: 0x3f62a3, ground: 0x18282a, intensity: 0.95 },
   exposure: 1.25,
   spawn: { x: SPAWN.x, z: SPAWN.z, yaw: Math.PI },
-  boundsCenter: { x: 4, z: -8 }, boundsRadius: 57,
+  boundsCenter: { x: 2, z: -5 }, boundsRadius: 55,
   heightAt: H,
   water: { level: SEA, slow: 0.5, maxDepth: 0.85 },
   bloom: { strength: 0.95, radius: 0.72, threshold: 0.7 },
@@ -218,7 +218,7 @@ function trailDist(x, z) {
   return best;
 }
 function snowAmount(x, y, z, ny) {
-  return smoothstep(0.05, 0.33, fbm(x * 0.045 + 11, z * 0.045 - 4, 4) + (y - 4) * 0.03 + (ny - 0.93) * 1.6);
+  return smoothstep(0.1, 0.36, fbm(x * 0.045 + 11, z * 0.045 - 4, 4) + (y - 4) * 0.03 + (ny - 0.93) * 1.6);
 }
 const tmpC = new THREE.Color();
 function groundColor(x, y, z, ny) {
@@ -234,7 +234,7 @@ function groundColor(x, y, z, ny) {
   c.lerp(COL.trail, (1 - smoothstep(0.55, 1.5, trailDist(x, z))) * 0.8);
   const steep = smoothstep(0.84, 0.62, ny);
   c.lerp(noise2D(x * 0.2, y * 0.6) > 0 ? COL.rock : COL.rockWarm, steep);
-  c.lerp(COL.sand, 1 - smoothstep(0.55, 1.4, y));                                           // black-sand beach
+  c.lerp(COL.sand, 1 - smoothstep(0.5, 1.0, y));                                           // black-sand beach
   return c;
 }
 function buildGround({ cx, cz, size, segs, warp, heightFn, colorFn, material }) {
@@ -282,40 +282,50 @@ terrain.receiveShadow = true; terrain.name = 'terrain';
 /* ═════════════════════════ 6. Kirkjufell ═════════════════════════ */
 function kGully(lx, lz, r) {
   const th = Math.atan2(lz, lx);
-  const g = Math.pow(1 - Math.abs(Math.sin(th * 9 + noise2D(lx * 0.025, lz * 0.025) * 1.6 + r * 3)), 7);
-  return g * smoothstep(0.06, 0.25, r) * (1 - smoothstep(0.45, 0.75, r));
+  const g = Math.pow(1 - Math.abs(Math.sin(th * 5.5 + noise2D(lx * 0.02, lz * 0.02) * 2.4)), 14);
+  return g * smoothstep(0.03, 0.1, r) * (1 - smoothstep(0.26, 0.4, r));
 }
+const kR = (lx, lz) => Math.hypot(lx / (lx < 0 ? 118 : 100), lz / 92);           // left flank gentler, right steeper
+const KSTEP = KM / 11;
+const kStrata = (lx, lz, h) => h + noise2D(lx * 0.03, lz * 0.03) * 1.2;          // wobbly bedding planes
 function KH(x, z) {
   const lx = x - PEAK.x, lz = z - PEAK.z;
-  const r = Math.hypot(lx / (lx < 0 ? 122 : 104), lz / 82);                // broad concave skirt
-  const ux = lx + 3.5, ur = Math.hypot(ux / (ux < 0 ? 58 : 50), lz / 50);   // steep upper cone, leaning left
-  let h = 0.64 * Math.pow(Math.max(0, 1 - ur), 1.12) + 0.4 * Math.exp(-r * 2.5) * (1 - smoothstep(0.8, 1.15, r));
-  h += 0.06 * Math.exp(-(((ur - 0.78) / 0.12) ** 2)) * smoothstep(-0.2, 0.8, lx / (Math.abs(lx) + Math.abs(lz) + 1e-3)); // right shoulder
+  const r = kR(lx, lz), rc = kR(lx + 4, lz);                                       // crown leans a little left
+  // "straw hat": steep crown + wide concave brim, joined with a soft max
+  const crown = 1 - 0.64 * Math.sqrt(rc * rc + 0.0004) / 0.3;
+  const brim = r < 0.8 ? 0.36 * Math.pow((0.8 - r) / 0.5, 1.35) : 0;
+  const d = Math.abs(crown - brim), k = 0.09;
+  let h = Math.max(crown, brim) + (d < k ? ((k - d) * (k - d) * 0.25) / k : 0);
+  h += 0.035 * Math.exp(-(((r - 0.4) / 0.06) ** 2)) * smoothstep(0.1, 0.7, lx / (Math.abs(lx) + Math.abs(lz) + 1e-3)); // right shoulder
   h *= KM;
-  h += fbm(lx * 0.04, lz * 0.04, 4) * 3.0 * smoothstep(1.1, 0.3, r);
-  const step = KM / 12, s = h / step, f = s - Math.floor(s);                 // sedimentary ledges
-  h = lerp(h, (Math.floor(s) + smoothstep(0.4, 0.92, f)) * step, 0.62 * smoothstep(0.1 * KM, 0.3 * KM, h));
-  h -= kGully(lx, lz, r) * 2.4;
-  return h - 3.2;
+  h += fbm(lx * 0.04, lz * 0.04, 4) * 2.0 * smoothstep(0.8, 0.25, r);
+  const sh = kStrata(lx, lz, h), s = sh / KSTEP, f = s - Math.floor(s);            // sedimentary ledges
+  h = lerp(h, (Math.floor(s) + smoothstep(0.5, 0.95, f)) * KSTEP - (sh - h), 0.12 + 0.2 * smoothstep(0.3 * KM, 0.45 * KM, h));
+  h -= kGully(lx, lz, r) * 1.3;
+  // low peninsula running off to the left, so the base melts into land instead of floating
+  const pen = (4.2 + 2.6 * fbm(lx * 0.03 + 5, lz * 0.03, 3)) * Math.exp(-((lz - (lx + 60) * 0.18) ** 2) / 1300) * smoothstep(-30, -85, lx);
+  return Math.max(h, pen) - 3.2;
 }
 const KCOL = { rock: C(0x2a2c31), rockB: C(0x3b332c), snow: C(0xe4ecf4), moss: C(0x3c4a32), sand: C(0x1e1f22) };
 function kColor(x, y, z, ny) {
   const lx = x - PEAK.x, lz = z - PEAK.z;
-  const r = Math.hypot(lx / (lx < 0 ? 122 : 104), lz / 82);
+  const r = kR(lx, lz);
   const hN = (y + 3.2) / KM;
+  const sh = kStrata(lx, lz, y + 3.2), f = sh / KSTEP - Math.floor(sh / KSTEP);
   const c = tmpC.copy(KCOL.rock).lerp(KCOL.rockB, 0.5 + 0.5 * Math.sin(y * 0.85 + noise2D(lx * 0.05, lz * 0.05) * 2));
   c.lerp(KCOL.moss, (1 - smoothstep(0.08, 0.2, hN)) * smoothstep(0.55, 0.85, ny));
-  let sn = smoothstep(0.62, 0.86, ny) * (0.55 + 0.45 * smoothstep(0.1, 0.5, hN));       // snow on ledges
-  sn += kGully(lx, lz, r) * 1.2 * smoothstep(0.12, 0.35, hN);                            // snow-filled gullies
-  sn += smoothstep(0.86, 0.98, hN) * 0.6;                                                 // dusted summit
+  let sn = smoothstep(0.6, 0.84, ny) * (0.5 + 0.5 * smoothstep(0.1, 0.5, hN));          // snow on flat ledges
+  sn = Math.max(sn, smoothstep(0.82, 0.97, f) * 0.9 * smoothstep(0.18, 0.3, hN));          // snow lines along each bedding plane
+  sn += kGully(lx, lz, r) * 1.2 * smoothstep(0.12, 0.35, hN);                              // snow-filled gullies
+  sn += smoothstep(0.86, 0.98, hN) * 0.6;                                                   // dusted summit
   sn *= smoothstep(-0.45, 0.15, fbm(lx * 0.06 + 3, lz * 0.06, 3)) * 0.4 + 0.6;
   c.lerp(KCOL.snow, clamp(sn, 0, 1) * smoothstep(0.03, 0.08, hN));
   c.lerp(KCOL.sand, 1 - smoothstep(0.3, 1.6, y));
   return c;
 }
 const kMat = helpers.addRim(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), 0x7dffcf, 0.22, 3.0);
-const kGeo = new THREE.PlaneGeometry(240, 182, 196, 150);
-kGeo.rotateX(-Math.PI / 2); kGeo.translate(PEAK.x - 15, 0, PEAK.z + 10);
+const kGeo = new THREE.PlaneGeometry(260, 155, 196, 118);
+kGeo.rotateX(-Math.PI / 2); kGeo.translate(PEAK.x - 35, 0, PEAK.z + 2.5);
 {
   const p = kGeo.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, KH(p.getX(i), p.getZ(i)));
@@ -335,7 +345,7 @@ function buildRidges() {
     const a = (i / N) * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
     const R = 470 + 55 * fbm(dx * 1.7 + 4, dz * 1.7, 3);
     const behind = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2)));  // 0 = straight behind Kirkjufell
-    const hgt = (22 + 85 * ridged(dx * 2.3 + 7, dz * 2.3 + 3, 4)) * lerp(0.22, 1, smoothstep(0.25, 1.0, behind));
+    const hgt = (22 + 85 * ridged(dx * 2.3 + 7, dz * 2.3 + 3, 4)) * lerp(0.08, 1, smoothstep(0.35, 1.15, behind));
     rows.forEach(([off, k, top]) => {
       const rr = R + off, y = k < 0 ? k : hgt * k + (top ? 0 : noise2D(i * 0.3, off) * 3);
       pos.push(cx + dx * rr, y, cz + dz * rr);
@@ -710,6 +720,7 @@ function buildGrass(count) {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = TIME;
+    sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize(vNormal);');
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         #ifdef USE_INSTANCING
@@ -808,7 +819,7 @@ RIVER.SK.forEach((s0, k) => {
   const p = RIVER.P[k]; if (!p.drop) return;
   const u = s0 / RIVER.LEN, c = RIVER.curve.getPointAt(u), tg = RIVER.curve.getTangentAt(u), hw = RIVER.props(s0).hw;
   const wf = helpers.createWaterfall({ x: c.x + tg.x * 0.12, z: c.z + tg.z * 0.12, top: p.L + 0.05, bottom: p.L - p.drop + 0.04,
-    width: hw * 1.8, rotation: Math.atan2(tg.x, tg.z), color: 0xa9c6d9, speed: 1.15, curve: 0.3 });
+    width: hw * 1.8, rotation: Math.atan2(tg.x, tg.z), color: 0x9bb9cc, speed: 1.15, curve: 0.3 });
   wf.children.forEach((ch) => {
     if (ch.name === 'water') ch.scale.set(0.5, 1, 0.42);
     if (ch.name === 'steam') { ch.material.uniforms.uColor.value.set(0x9ab8cc); ch.material.uniforms.uOpacity.value = 0.2; }
@@ -859,7 +870,7 @@ scene.add(helpers.createSteam({ center: { x: PEAK.x - 10, z: PEAK.z + 72 }, area
 // sky: stars, aurora curtains behind Kirkjufell (+ a softer set behind you), swirling overhead ribbons
 scene.add(helpers.createStars(4200, { size: 1.75 }));
 const auroraFront = helpers.createAurora({ count: 4, distance: 345, height: 210, y: 28, span: 2.3, direction: -0.12,
-  colors: ['#3dff9a', '#2dffc8', '#c86bff'], intensity: 1.35, speed: 0.75, sway: 22, seed: 8 });
+  colors: ['#3dff9a', '#2dffc8', '#c86bff'], intensity: 1.22, speed: 0.75, sway: 22, seed: 8 });
 const auroraBack = helpers.createAurora({ count: 2, distance: 360, height: 170, y: 40, span: 1.9, direction: Math.PI + 0.4,
   colors: ['#3dff9a', '#5dffd0', '#ff6bd0'], intensity: 0.75, speed: 0.6, sway: 18, seed: 21 });
 const dome = buildAuroraDome();
@@ -913,7 +924,7 @@ w.onUpdate((dt, t) => {
   }
   burst = Math.max(0, burst - dt / 9);
   const b = Math.sin(Math.min(1, (1 - burst) * 4) * Math.PI / 2) * burst;   // quick rise, slow decay
-  const k = 0.9 + 0.12 * Math.sin(t * 0.21) + 0.08 * Math.sin(t * 0.53 + 1.3) + b * 0.75;
+  const k = 0.92 + 0.1 * Math.sin(t * 0.21) + 0.07 * Math.sin(t * 0.53 + 1.3) + b * 0.6;
   auroraT += dt * (1 + b * 2.2);
   dome.material.uniforms.uT.value = auroraT;
   dome.material.uniforms.uInt.value = k;
@@ -925,7 +936,7 @@ w.onUpdate((dt, t) => {
     const f = 0.88 + 0.08 * Math.sin(t * 9 + L.seed) + 0.05 * Math.sin(t * 23 + L.seed * 2);
     L.light.intensity = 7 * f; L.glow.material.opacity = 0.8 * f;
   }
-  for (const d of tripods.leds) { const on = (t * 0.8 + d.seed) % 1 < 0.55 ? 1 : 0.15; d.led.material.color.setScalar(on).r = 1; d.ledGlow.material.opacity = 0.9 * on; }
+  for (const d of tripods.leds) { const on = (t * 0.8 + d.seed) % 1 < 0.55 ? 1 : 0.12; d.led.material.color.setRGB(on, on * 0.1, on * 0.1); d.ledGlow.material.opacity = 0.9 * on; }
 
   // wading in the river: slow down (engine reads inWater on the next step) + ripples
   const pp = w.player.position, q = RIVER.query(pp.x, pp.z);
@@ -950,7 +961,7 @@ w.onUpdate((dt, t) => {
   if (!seen.shore && pp.z < coastZ(pp.x) + 7) { seen.shore = true; w.toast('海面倒映著極光與草帽山', 3200); }
 });
 
-window.__KIRK = { H, KH, RIVER, baseLand, coastZ, world: w };
+window.__KIRK = { H, KH, RIVER, baseLand, coastZ, groundColor, kColor, world: w };   // debug handle
 w.start();
 </script>
 </body>

@@ -12,7 +12,7 @@
     "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }}
   </script>
-  <link rel="stylesheet" href="world.css?v=10041641">
+  <link rel="stylesheet" href="world.css?v=10041652">
 </head>
 <body>
 <div class="w-loading"><div class="w-loading-inner">
@@ -43,14 +43,14 @@ const L = 0;                         // water level
 const DECK = L + 0.3;                // boardwalk deck top
 const BW = 2.4;                      // boardwalk width
 const FOG = 0xe8b29c;                // peach-pink haze = sky horizon
-const SUN_DIR = [-0.48, 0.23, -0.85];// low sun, north-west, ~13° up (front-left of spawn view)
+const SUN_DIR = [-0.48, 0.175, -0.86];// low sun, north-west, ~10° up (upper-left of the spawn view)
 const BAR = { x: -9.9, z: -23.75 };
 const MASK = { x: 11, z: 2 };
 const LAVA = { x: -30, z: 8 };
-const PLANT = { x: -58, y: 6, z: -84 };
+const PLANT = { x: -72, y: 5, z: -76 };
 const SPAWN = { x: 0.59, z: 18.5, yaw: Math.atan2(-0.7, -25.5) };
-const WATER_PATHS = [[0.5, 25, 0.3, 8], [0.3, 8, -3.4, -14], [-3.4, -14, -4.3, -19]];
-const LAND_PATH = [0.8, 27, 3, 62];
+const WATER_PATHS = [[0.4, 22, 0.3, 8], [0.3, 8, -3.4, -14], [-3.4, -14, -4.3, -19]];
+const LAND_PATH = [0.8, 28, 3, 62];
 
 const BLOBS = [                       // union of ellipses = the lagoon
   { x: 0, z: -2, rx: 29, rz: 23 },
@@ -80,7 +80,7 @@ function lagoonF(x, z) {
   f = Math.min(f, (Math.hypot(x - LAVA.x, z - LAVA.z) - 6) * 0.05);          // keep the viewpoint dry
   let d = Math.min(Math.hypot(x - BAR.x, z - BAR.z) - 4.5, Math.hypot(x - MASK.x, z - MASK.z) - 2.5);
   for (const s of WATER_PATHS) d = Math.min(d, segDist(x, z, s[0], s[1], s[2], s[3]));
-  return Math.max(f, 0.34 * (1 - smoothstep(2.5, 8, d)));                    // keep boardwalk & bar wet
+  return Math.max(f, 0.34 - 0.06 * Math.max(0, d - 2.5));                    // keep boardwalk & bar wet (continuous)
 }
 
 function H(x, z) {
@@ -93,8 +93,8 @@ function H(x, z) {
     h += (ridged(x * 0.08 + 11, z * 0.08 - 4, 4) * 1.9 + fbm(x * 0.28, z * 0.28, 3) * 0.35) * smoothstep(0.04, 0.4, g);
   }
   const r = Math.hypot(x, z);
-  h += smoothstep(46, 92, r) * (2.5 + 11 * ridged(x * 0.016 + 5, z * 0.016 - 9, 4) + 2.5 * (fbm(x * 0.009, z * 0.009, 3) + 1));
-  const tb = (x - 75) ** 2 + (z + 100) ** 2; h += 30 * Math.exp(-tb / 2450);   // Þorbjörn (σ ≈ 35 m)
+  h += smoothstep(46, 92, r) * (2 + 8.5 * ridged(x * 0.016 + 5, z * 0.016 - 9, 4) + 2 * (fbm(x * 0.009, z * 0.009, 3) + 1));
+  const tb = (x - 78) ** 2 + (z + 100) ** 2; h += 22 * Math.exp(-tb / 2450);   // Þorbjörn (σ ≈ 35 m)
   const dp = segDist(x, z, LAND_PATH[0], LAND_PATH[1], LAND_PATH[2], LAND_PATH[3]);
   if (dp < 4 && h > DECK - 0.15) h = lerp(DECK - 0.15, h, smoothstep(1.5, 3.8, dp)); // gravel path
   const dpp = Math.hypot(x - PLANT.x, z - PLANT.z);
@@ -136,6 +136,8 @@ const R = rand(2024);
 // soft warm fill from behind the camera so faces turned away from the low sun still read
 const fill = new THREE.DirectionalLight(0xffcdb8, 0.55);
 fill.position.set(35, 45, 80); scene.add(fill);
+// the sun sits ~10° above the horizon: a bit more shadow bias avoids acne on grazing-lit planks/rocks
+w.sun.shadow.bias = -0.0005; w.sun.shadow.normalBias = 0.05;
 
 /* ═════════════════ 3. utilities ═════════════════ */
 function canvasTex(cw, ch, draw, repeat = null) {
@@ -292,9 +294,9 @@ for (let i = 0; i < 6500; i++) {
   if (nearFeature(x, z)) continue;
   const f = lagoonF(x, z);
   if (f > -0.07 && f < 0.035) {
-    if (R() < 0.5) (R() < 0.3 ? spires : boulders).push({ x, z, s: R() < 0.3 ? lerp(0.7, 1.7, R()) : lerp(0.9, 2.6, Math.pow(R(), 1.4)) });
-  } else if (f >= 0.12 && R() < 0.01) wetRocks.push({ x, z, s: lerp(0.7, 1.8, R()) });
-  else if (f < -0.12 && Math.hypot(x, z) < 62 && R() < 0.045) landRocks.push({ x, z, s: lerp(0.5, 2.2, Math.pow(R(), 1.8)) });
+    if (R() < 0.32) (R() < 0.3 ? spires : boulders).push({ x, z, s: R() < 0.3 ? lerp(0.7, 1.7, R()) : lerp(0.9, 2.6, Math.pow(R(), 1.4)) });
+  } else if (f >= 0.12 && R() < 0.01) { if (!nearFeature(x, z, 2.6)) wetRocks.push({ x, z, s: lerp(0.7, 1.8, R()) }); }
+  else if (f < -0.12 && Math.hypot(x, z) < 62 && R() < 0.045) { if (!nearFeature(x, z, 1.5)) landRocks.push({ x, z, s: lerp(0.5, 2.2, Math.pow(R(), 1.8)) }); }
 }
 ISLANDS.forEach((isl) => {
   let n = 0;
@@ -305,9 +307,9 @@ ISLANDS.forEach((isl) => {
     (n % 3 === 0 ? spires : boulders).push({ x, z, s: lerp(1.1, 2.5, R()) }); n++;
   }
 });
-for (let i = 0; i < 8; i++) {                                                // jagged formation at the viewpoint
-  const a = (i / 8) * Math.PI * 2 + R() * 0.5, d = 4 + R() * 3.2;
-  formation.push({ x: LAVA.x + Math.cos(a) * d, z: LAVA.z + Math.sin(a) * d, s: lerp(1.4, 2.8, R()) });
+for (let i = 0; i < 6; i++) {                                                // jagged formation behind the viewpoint (west arc, east side open)
+  const a = Math.PI * 0.6 + (i / 5) * Math.PI * 0.8 + (R() - 0.5) * 0.2, d = 4.5 + R() * 2.5;
+  formation.push({ x: LAVA.x + Math.cos(a) * d, z: LAVA.z + Math.sin(a) * d, s: lerp(1.4, 2.6, R()) });
 }
 const rockSets = [
   [boulders, { color: 0x29282b, seed: 11, squash: 0.95, sink: 0.3 }],
@@ -536,8 +538,7 @@ let hutLight = null;
     slab.rotation.x = s * slope;
     const turf = new THREE.Mesh(turfGeo, turfMat); turf.position.y = 0.17; turf.castShadow = true; turf.receiveShadow = true; slab.add(turf);
   });
-  const ridge = add(new THREE.CylinderGeometry(0.17, 0.17, W + 0.6, 10).rotateZ(Math.PI / 2), turfMat, 0, 3.66, 0);
-  ridge.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ridge.geometry.attributes.position.count * 3).fill(0.16), 3));
+  add(new THREE.CylinderGeometry(0.17, 0.17, W + 0.6, 10).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x6a8442, roughness: 1, flatShading: true }), 0, 3.66, 0);
   const gShape = new THREE.Shape();
   gShape.moveTo(-D / 2, 0); gShape.lineTo(D / 2, 0); gShape.lineTo(D / 2, 0.14); gShape.lineTo(0, 0.86); gShape.lineTo(-D / 2, 0.14); gShape.closePath();
   const gGeo = new THREE.ShapeGeometry(gShape);
@@ -572,7 +573,7 @@ let hutLight = null;
   });
   g.add(bulbs);
   // a big soft halo in front of the window
-  const halo = helpers.createGlow({ color: 0xff9f55, size: 5.5, opacity: 0.32 }); halo.position.set(0, 1.2, D / 2 + 0.6); g.add(halo);
+  const halo = helpers.createGlow({ color: 0xff9f55, size: 4.5, opacity: 0.22 }); halo.position.set(0, 1.2, D / 2 + 0.6); g.add(halo);
   // colliders: hut (wall) + counter (wall)
   w.addCollider({ x: BAR.x, z: BAR.z, w: W + 0.1, d: D + 0.1, rot: 0 });
   w.addCollider({ x: BAR.x, z: BAR.z + D / 2 + 0.3, w: winW + 0.5, d: 0.95, rot: 0 });
@@ -617,7 +618,7 @@ let hutLight = null;
 {
   const y = H(LAVA.x + 1.6, LAVA.z + 1.2);
   const sign = signBoard('ILLAHRAUN · 1226', '熔岩田', 1.6, 0.56, '#c9b8ff');
-  sign.position.set(LAVA.x + 1.6, y + 1.25, LAVA.z + 1.2); sign.rotation.y = 0.75; scene.add(sign);
+  sign.position.set(LAVA.x + 1.6, y + 1.25, LAVA.z + 1.2); sign.rotation.y = 1.0; scene.add(sign);
   const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.1, 0.09), new THREE.MeshStandardMaterial({ color: 0x3e3129, roughness: 0.9 }));
   post.position.set(LAVA.x + 1.6, y + 0.45, LAVA.z + 1.2); post.castShadow = true; scene.add(post);
   w.addCollider({ x: LAVA.x + 1.6, z: LAVA.z + 1.2, r: 0.2 });
@@ -645,7 +646,7 @@ for (let i = 0; i < 4000 && steamSrc.length < 46; i++) {
   if (lagoonF(x, z) < 0.1 || nearFeature(x, z, 3.2)) continue;                // keep the boardwalk view clear
   steamSrc.push({ x, z, r: 2.5 + R() * 3.5, y: L });
 }
-const hotSpots = [[-17, -14], [16, -8], [24, 9], [-26, -12], [5, -24], [-6, 10]]
+const hotSpots = [[-17, -14], [16, -8], [24, 9], [-26, -12], [5, -24], [-15, 13]]
   .map(([x, z]) => ({ x, z, r: 2.2, y: L }));
 const fumaroles = [[-36, 18], [27, 29], [35, -17], [-39, -23], [-20, 36]]
   .map(([x, z]) => ({ x, z, r: 0.8, y: H(x, z) }));
@@ -769,6 +770,13 @@ w.onUpdate((dt, t) => {
   }
   // warm flicker in the bar
   if (hutLight) hutLight.intensity = 18 + Math.sin(t * 5.3) * 0.6 + Math.sin(t * 13.1) * 0.35;
+});
+
+// engine quirk: "R" (back to spawn) drops the player at heightAt() = the lagoon floor under the deck;
+// the engine handles keydown first, so lift the traveler back onto the boardwalk right after.
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyR' || e.repeat) return;
+  const p = w.player.position; p.y = Math.max(p.y, w.groundAt(p.x, p.z));
 });
 
 /* ═════════════════ 16. go ═════════════════ */
