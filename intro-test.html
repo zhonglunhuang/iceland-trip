@@ -123,7 +123,10 @@
       var opts = {
         onStart: function () { __log('onStart()'); },
         onReveal: function (i) { __log('onReveal() ' + JSON.stringify(i)); },
-        onDone: function (i) { __log('onDone() ' + JSON.stringify(i) + '  scroll restored: ' + (getComputedStyle(document.body).overflow !== 'hidden')); }
+        onDone: function (i) {
+          __log('onDone() ' + JSON.stringify(i) + '  scroll restored: ' + (getComputedStyle(document.documentElement).overflow !== 'hidden' && getComputedStyle(document.body).overflow !== 'hidden') + '  overlay removed: ' + !document.getElementById('ixo-intro'));
+          if (!window.__rechecked) { window.__rechecked = true; __log('Intro.init() again → ' + Intro.init(opts) + ' (false = once per session)'); }
+        }
       };
       if (q.has('seek')) {
         // test hook: jump straight into the film at a given second (optionally frozen)
@@ -131,6 +134,7 @@
       } else {
         __log('Intro.init() → ' + Intro.init(opts));
       }
+      if (q.has('autoskip')) setTimeout(function () { __log('Intro.skip()'); Intro.skip(); }, parseFloat(q.get('autoskip')) * 1000 || 0);
       Intro.whenRevealed().then(function (i) { __log('whenRevealed resolved ' + JSON.stringify(i)); });
       Intro.whenDone().then(function (i) { __log('whenDone resolved ' + JSON.stringify(i)); });
 

@@ -162,6 +162,7 @@
     if (!A) return undefined;
     try {
       if (typeof A.getScene === 'function') return A.getScene();
+      if (typeof A.scene === 'function') return A.scene();        // js/ambient.js API
       if ('scene' in A) return A.scene;
       if ('currentScene' in A) return A.currentScene;
     } catch (e) { /* ignore */ }
@@ -560,24 +561,24 @@
 .vw__bar i{position:absolute;inset:0;transform-origin:0 50%;transform:scaleX(var(--p,0));background:${GRAD};border-radius:3px;transition:transform .9s ${EASE}}
 .vw__tools{display:flex;gap:10px;align-items:center}
 .vw__btn{appearance:none;-webkit-appearance:none;margin:0;font:inherit;color:#fff;height:44px;min-width:44px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer;transition:background-color .3s,transform .45s ${EASE},opacity .55s ${EASE}}
-.vw__btn:hover{background-color:rgba(255,255,255,.16)}
+.vw__btn:hover{background-color:rgba(52,52,58,.58)}
 .vw__btn:active{transform:scale(.93)}
 .vw__btn svg{flex:none}
 .vw__close{width:44px;padding:0}
 .vw__gyro[hidden]{display:none}
-.vw__nav{appearance:none;-webkit-appearance:none;margin:0;font:inherit;color:#fff;position:absolute;top:50%;height:56px;min-width:56px;margin-top:-28px;padding:0;border-radius:999px;display:flex;align-items:center;cursor:pointer;transition:background-color .3s,opacity .55s ${EASE},transform .7s ${EASE}}
-.vw__nav:hover{background-color:rgba(255,255,255,.16)}
+.vw__nav{appearance:none;-webkit-appearance:none;margin:0;font:inherit;color:#fff;position:absolute;top:40%;height:56px;min-width:56px;margin-top:-28px;padding:0;border-radius:999px;display:flex;align-items:center;cursor:pointer;transition:background-color .3s,opacity .55s ${EASE},transform .7s ${EASE}}
+.vw__nav:hover{background-color:rgba(40,40,46,.62)}
 .vw__nav:active .vw__nav-ico{transform:scale(.88)}
 .vw__nav--prev{left:max(20px,env(safe-area-inset-left))}
 .vw__nav--next{right:max(20px,env(safe-area-inset-right));flex-direction:row-reverse}
 .vw__nav-ico{flex:none;width:54px;height:54px;display:grid;place-items:center;transition:transform .35s ${EASE}}
-.vw__nav-lbl{display:block;max-width:0;overflow:hidden;white-space:nowrap;opacity:0;font-size:14px;font-weight:600;letter-spacing:.01em;transition:max-width .6s ${EASE},opacity .35s,padding .6s ${EASE}}
+.vw__nav-lbl{display:block;max-width:0;overflow:hidden;white-space:nowrap;opacity:0;text-shadow:0 1px 8px rgba(0,0,0,.35);font-size:14px;font-weight:600;letter-spacing:.01em;transition:max-width .6s ${EASE},opacity .35s,padding .6s ${EASE}}
 .vw__nav-lbl small{display:block;font-size:11px;font-weight:600;letter-spacing:.12em;color:rgba(255,255,255,.55);text-transform:uppercase;line-height:1.3}
 .vw__nav--prev .vw__nav-lbl{text-align:left}
 .vw__nav--next .vw__nav-lbl{text-align:right}
 @media (hover:hover){.vw__nav:hover .vw__nav-lbl,.vw__nav:focus-visible .vw__nav-lbl{max-width:260px;opacity:1}.vw__nav--prev:hover .vw__nav-lbl,.vw__nav--prev:focus-visible .vw__nav-lbl{padding-right:22px}.vw__nav--next:hover .vw__nav-lbl,.vw__nav--next:focus-visible .vw__nav-lbl{padding-left:22px}}
 .vw.is-ui-in .vw__nav[disabled]{opacity:0;pointer-events:none}
-.vw__card{position:absolute;left:max(24px,env(safe-area-inset-left));bottom:max(24px,env(safe-area-inset-bottom));width:min(620px,calc(100vw - 48px));max-height:calc(100% - 132px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:none;border-radius:30px;padding:26px 30px 26px;--vw-x:0px}
+.vw__card{position:absolute;left:max(24px,env(safe-area-inset-left));bottom:max(24px,env(safe-area-inset-bottom));width:min(620px,calc(100vw - 48px));max-height:max(220px,calc(60% - 64px));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:none;border-radius:30px;padding:26px 30px 26px;--vw-x:0px}
 .vw__card::-webkit-scrollbar{display:none}
 .vw__eyebrow{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;margin:0;font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.62)}
 .vw__eyebrow b{color:#fff;font-weight:700}
@@ -675,7 +676,7 @@
     raf: 0, last: 0, anims: [], navToken: 0, cardToken: 0, pending: null,
     drag: null, overUI: false, wheelAcc: 0, wheelT: 0, wheelLock: 0, cursorIdle: false,
     prevFocus: null, prevScene: undefined, lock: null, pausedFx: [],
-    perf: { acc: 0, n: 0, frames: 0, scale: 1, fps: 60 },
+    perf: { acc: 0, n: 0, frames: 0, scale: 1, fps: 0 },
     listeners: []
   };
   const G = { state: 'idle', on: false, base: null, last: 0 };
@@ -728,8 +729,9 @@
     };
     S.el.grain.style.backgroundImage = grainURL();
     S.el.close.addEventListener('click', () => close());
-    S.el.prev.addEventListener('click', () => step(-1));
-    S.el.next.addEventListener('click', () => step(1));
+    const navClick = (d) => () => { if (now() < (S.swallowClick || 0)) return; step(d); };
+    S.el.prev.addEventListener('click', navClick(-1));
+    S.el.next.addEventListener('click', navClick(1));
     S.el.gyro.addEventListener('click', () => requestGyro());
     S.el.card.addEventListener('click', (e) => {
       const a = e.target.closest && e.target.closest('.vw__cta--world');
@@ -1305,9 +1307,10 @@
   }
   function onPointerDown(e) {
     if (!e.isPrimary || S.phase === 'closing') return;
-    if (e.target.closest && e.target.closest(UI_SEL)) return;
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    S.drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: now(), moved: false, type: e.pointerType };
+    const onNav = !!(e.target.closest && e.target.closest('.vw__nav'));
+    if (!onNav && e.target.closest && e.target.closest(UI_SEL)) return;
+    if (e.pointerType === 'mouse' && (e.button !== 0 || onNav)) return;
+    S.drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: now(), moved: false, type: e.pointerType, ui: onNav };
     try { S.el.root.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   }
   function onPointerUp(e) {
@@ -1317,8 +1320,12 @@
     try { S.el.root.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     const dx = e.clientX - d.x0, dy = e.clientY - d.y0, dt = now() - d.t0;
     if (d.type !== 'mouse') { S.input.x = 0; S.input.y = 0; }
-    if (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.25 && dt < 1000) { step(dx < 0 ? 1 : -1); return; }
-    if (!d.moved && dt < 450 && d.type !== 'mouse') {
+    if (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      if (d.ui) S.swallowClick = now() + 400;   // a swipe that began on an arrow must not also click it
+      step(dx < 0 ? 1 : -1);
+      return;
+    }
+    if (!d.moved && !d.ui && dt < 450 && d.type !== 'mouse') {
       requestGyro();
       toggleUI();
     }
@@ -1332,11 +1339,11 @@
     if (card && card.scrollHeight > card.clientHeight + 2 && Math.abs(e.deltaY) >= Math.abs(e.deltaX)) return;
     e.preventDefault();
     const t = now();
-    if (t - S.wheelT > 220) S.wheelAcc = 0;
+    S.wheelAcc *= Math.exp(-(t - S.wheelT) / 320);   // decay instead of hard reset (robust to slow frames)
     S.wheelT = t;
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 1.2) {
       S.wheelAcc += e.deltaX;
-      if (t > S.wheelLock && Math.abs(S.wheelAcc) > 70) {
+      if (t > S.wheelLock && Math.abs(S.wheelAcc) > 64) {
         step(S.wheelAcc > 0 ? 1 : -1);
         S.wheelAcc = 0;
         S.wheelLock = t + 900;
@@ -1351,7 +1358,7 @@
     S.cam.x = 0; S.cam.y = 0; S.input.x = 0; S.input.y = 0; S.gyroIn.x = 0; S.gyroIn.y = 0;
     S.idleW = 0; S.dolly = 0; S.breath = 0; S.time = Math.random() * 40;
     S.lastInput = now() - 1400;        // drift kicks in ~1s after opening
-    S.perf = { acc: 0, n: 0, frames: 0, scale: 1, fps: 60 };
+    S.perf = { acc: 0, n: 0, frames: 0, scale: 1, fps: 0 };
     S.pending = null;
   }
 

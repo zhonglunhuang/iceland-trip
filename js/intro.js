@@ -191,7 +191,7 @@
     '.ixo__vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 90% 80% at 50% 50%,transparent 52%,rgba(0,0,0,.62) 100%)}',
     '.ixo__halo{position:absolute;left:50%;top:50%;width:min(1200px,150vw);height:min(620px,90vw);transform:translate(-50%,-50%);opacity:0;pointer-events:none;background:radial-gradient(closest-side,rgba(0,4,10,.55),rgba(0,4,10,.25) 55%,rgba(0,0,0,0)),radial-gradient(closest-side,rgba(107,255,184,.10),rgba(127,227,255,0) 70%)}',
     '.ixo__title{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;padding:0 16px}',
-    '.ixo__h{margin:0;font-weight:800;font-size:clamp(66px,18vw,232px);line-height:1.04;letter-spacing:-.035em;white-space:nowrap;position:relative}',
+    '.ixo__h{margin:0;font-weight:800;font-size:clamp(66px,19vw,232px);line-height:1.04;letter-spacing:-.035em;white-space:nowrap;position:relative}',
     '.ixo__ch{display:inline-block;opacity:0;transform-origin:50% 60%}',
     '.ixo__g{display:block;padding:.04em 0;color:transparent;-webkit-text-fill-color:transparent;background-image:linear-gradient(100deg,#7fe3ff 0%,#6bffb8 25%,#b38cff 50%,#6bffb8 75%,#7fe3ff 100%);background-repeat:repeat-x;-webkit-background-clip:text;background-clip:text}',
     '.ixo__line{width:min(340px,54vw);height:1px;margin-top:clamp(16px,2.4vw,30px);background:linear-gradient(90deg,transparent,#7fe3ff 22%,#6bffb8 50%,#b38cff 78%,transparent);transform:scaleX(0);opacity:.9}',
@@ -508,6 +508,7 @@
       var k = e.key;
       if (k === 'Escape' || k === 'Esc') { e.preventDefault(); skip(); return; }
       var t = e.target, ours = t && st.root.contains(t) && t.tagName === 'BUTTON';
+      if (k === 'Enter' && st.phase === 'gate' && !ours) { e.preventDefault(); begin(st); return; }
       if (k === 'Tab') {
         var btns = Array.prototype.filter.call(st.root.querySelectorAll('button'), function (b) {
           return b.offsetParent !== null && !b.disabled;
@@ -630,9 +631,6 @@
     }
     // generate cloud textures while the viewer reads the gate
     genTextures(st, false);
-    setTimeout(function () {
-      if (S === st && st.phase === 'gate') { try { st.start.focus({ preventScroll: true }); } catch (e) {} }
-    }, 700);
   }
 
   function genTextures(st, sync) {
@@ -808,18 +806,20 @@
       c.drawImage(o.tex, px - pw / 2, py - ph / 2, pw, ph);
     }
 
-    // white-outs: flying straight through a cloud bank
+    // white-outs: flying straight through a cloud bank (billows rush past the lens)
     if (fog > 0.01) {
       var bump = T < (TL.fog1 + TL.fog2) / 2 ? TL.fog1 : TL.fog2;
       var fp = clamp01((T - bump) / 0.8 + 0.5);
-      var z1 = st.diag * (1.0 + 2.6 * fp), z2 = st.diag * (1.6 + 3.4 * fp);
-      c.globalAlpha = Math.min(1, fog * 0.95);
-      c.drawImage(st.tex[0], cx - z1 * 0.7, cy - z1 * 0.5, z1 * 1.4, z1);
-      c.globalAlpha = Math.min(1, fog * 0.7);
-      c.drawImage(st.tex[3 % st.tex.length], cx - z2 * 0.65, cy - z2 * 0.45, z2 * 1.3, z2 * 0.9);
-      c.globalAlpha = fog * 0.36;
+      c.globalAlpha = fog * 0.3;
       c.fillStyle = '#8a9bb2';
       c.fillRect(-pad, -pad, w + pad * 2, h + pad * 2);
+      for (k = 0; k < 4; k++) {
+        var zz = st.diag * (0.55 + 0.45 * k + (2.2 + k * 0.6) * fp);
+        var an = k * 2.3 + (bump === TL.fog1 ? 0 : 1.1);
+        var ofx = Math.cos(an) * w * (0.08 + 0.5 * fp), ofy = Math.sin(an) * h * (0.06 + 0.4 * fp);
+        c.globalAlpha = Math.min(1, fog * (0.95 - k * 0.14));
+        c.drawImage(st.tex[(k * 3 + 1) % st.tex.length], cx + ofx - zz * 0.7, cy + ofy - zz * 0.48, zz * 1.4, zz * 0.96);
+      }
     }
 
     // aurora light leaking up from below just before the clouds part

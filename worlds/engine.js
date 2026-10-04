@@ -22,7 +22,11 @@
  *      w.start();                                                      // fades loading screen
  *    </script>
  *
- *  Coordinates: Y is up, 1 unit ≈ 1 metre. The player is ~1.6 units tall.
+ *  Instant loading screen (optional): put the static markup from _template.html
+ *  (<div class="w-loading">…</div>) right after <body> so the title shows while three.js downloads.
+ *
+ *  Coordinates: Y is up, 1 unit ≈ 1 metre. The player is ~1.85 units tall (with beanie).
+ *  Keys: WASD/arrows move (camera-relative), Shift run, Space jump, P photo mode, R back to spawn.
  *  The ground is defined ONLY by `heightAt(x,z)`; build your visible terrain mesh
  *  from the same function (helpers.createTerrain({heightFn})) so feet match.
  *
@@ -33,15 +37,17 @@
  *  subtitle      string    Small line under the title.                        default ''
  *  backHref      string    "← 回到行程" link.                       default '../index.html#worlds'
  *  timeOfDay     'day'|'dusk'|'night'   Picks lights, sky, exposure, player lantern.  default 'day'
- *  background    hex       Clear colour + default fog/horizon colour.         default 0x8fb3c9
+ *  background    hex       Clear colour + default fog/horizon colour.
+ *                default by timeOfDay: day 0x8fb3c9 · dusk 0xd59a86 · night 0x0a1424
  *  fog           {color, near, far} | {color, density} (FogExp2) | false.
- *                default {color: background, near: 40, far: 260}
+ *                default {color: background, near: 40, far: 260 (night 320)}
  *  sky           false | {top, horizon, bottom, sunColor, glow}. Gradient sky dome that
  *                follows the camera. horizon defaults to the fog colour (seamless).
  *  sun           {color, intensity, dir:[x,y,z]}  override key light (moon at night).
  *  hemi          {sky, ground, intensity}          override hemisphere fill light.
  *  exposure      number   tone-mapping exposure (day 1.0 / dusk 1.05 / night 1.2)
- *  spawn         {x, z, yaw?}  player start; yaw = facing (radians, 0 = +Z).  default {x:0,z:0}
+ *  spawn         {x, z, yaw?}  player start. yaw = facing in radians (0 = +Z).
+ *                default {x:0, z:0, yaw:Math.PI} → faces −Z, camera starts behind at +Z.
  *  boundsRadius  number   player cannot walk further than this from boundsCenter. default 80
  *  boundsCenter  {x, z}                                                        default {x:0,z:0}
  *  heightAt      (x,z)=>y ground height function.                            default ()=>0
@@ -51,9 +57,12 @@
  *  hints         string[]  world-specific hint chips shown after the control hints.
  *  info          [{at:{x,z}, radius=4, title, text, img?, marker=true}]   proximity cards;
  *                marker draws a floating glowing orb + ground ring at the spot.
- *  camera        {distance=7.5, minDistance=3, maxDistance=16, pitch=0.32, fov=50, intro=true}
+ *  camera        {distance=7.5, minDistance=3, maxDistance=16, pitch=0.32, fov=50, intro=true,
+ *                 lookUp = 2.0 at night / 0.7 otherwise}  lookUp raises the aim point (metres)
+ *                so more sky is in frame (player sits in the lower third — great for aurora).
  *  player        {walk=4.4, run=8.4, jump=8.6, light: bool (auto at night), colors:{...}}
- *                colors: sweater, yoke, pattern, beanie, pom, pants, boots, skin, hair, pack.
+ *                colors: sweater, yoke, pattern, beanie, pom, pants, boots, skin, hair, pack, roll
+ *                (CSS colour strings).
  *  shadows       bool  (default true)
  *
  * ────────────────────────────────────────────────────────────────────────────
@@ -64,9 +73,13 @@
  *  player        THREE.Group at the feet. Extra fields: .velocity (Vector3), .onGround,
  *                .inWater, .speed, .teleport(x, z, yaw?)
  *  onUpdate(fn(dt, elapsed))   per-frame callback, returns an unsubscribe function.
- *  addCollider(x)  x = {x, z, r, top?} | Object3D (bounding box → circle) | array.
- *                  With `top`, the collider is a platform: walk/jump onto it if your
- *                  feet are within 0.5 of the top, otherwise it is a wall. Returns x.
+ *  addCollider(x, opt?)  x = circle {x, z, r, top?} | box {x, z, w, d, rot?, top?} |
+ *                  Object3D | array.  Object3D → bounding circle by default, or an oriented
+ *                  box with opt {shape:'box'} (uses geometry bounds + rotation.y — good for
+ *                  walls/cliffs). opt {wall:true} = infinitely tall (no top).
+ *                  With `top`, a collider is a platform: walk/jump onto it if your feet are
+ *                  within 0.5 of the top, otherwise it blocks. No `top` = wall. Returns x.
+ *                  e.g. w.addCollider({x:0, z:-20, w:30, d:2, rot:0.3})   // invisible wall
  *  setHeightFn(fn)   replace the ground function at runtime.
  *  heightAt(x,z)     current ground function.  groundAt(x,z) also counts platforms.
  *  addInfo(zone)     add an info zone after creation (same shape as options.info[i]).
@@ -92,7 +105,7 @@
  *  createSky({top, horizon, bottom, sunDir:Vector3, sunColor, glow, moon}) → Mesh
  *       (createWorld already adds one; use options.sky to style it)
  *  createStars(count=2500, {radius=1500, size=1.8, milkyWay=true}) → Points (follows camera)
- *  createAurora({count=3, distance=150, height=70, y=40, span=1.6, direction=0,
+ *  createAurora({count=3, distance=150, height=70, y=16, span=1.6, direction=0,
  *                colors:['#38ff9c','#2fe0c0','#b38cff'], intensity=1, speed=1, sway=12})
  *       → Group of curtains around the camera. direction = yaw (0 = towards -Z).
  *  createWater({size=200 | width,depth | radius, segments=128, level=0, color=0x4fb6c9,
@@ -336,7 +349,7 @@ export function createStars(count = 2500, opts = {}) {
 }
 
 /** Aurora borealis: several animated curtains on an arc around the camera. */
-export function createAurora({ count = 3, distance = 150, height = 70, y = 40, span = 1.6, direction = 0,
+export function createAurora({ count = 3, distance = 150, height = 70, y = 16, span = 1.6, direction = 0,
   colors = ['#38ff9c', '#2fe0c0', '#b38cff'], intensity = 1, speed = 1, sway = 12, follow = true, seed = 5 } = {}) {
   const group = new THREE.Group(); group.name = 'aurora';
   const r = rand(seed);
@@ -380,7 +393,7 @@ export function createAurora({ count = 3, distance = 150, height = 70, y = 40, s
       uniforms: {
         uTime: SHARED.time, uSpeed: { value: speed }, uSeed: { value: r() * 50 },
         uR: { value: distance + i * 28 + r() * 10 }, uSpan: { value: span * (0.75 + r() * 0.5) },
-        uOff: { value: (r() - 0.5) * 1.1 }, uH: { value: height * (0.8 + r() * 0.5) }, uY: { value: y + i * 6 + r() * 8 },
+        uOff: { value: (r() - 0.5) * 1.1 }, uH: { value: height * (0.8 + r() * 0.5) }, uY: { value: y + i * 5 + r() * 6 },
         uSway: { value: sway }, uIntensity: { value: intensity * (i === 0 ? 1.15 : 0.75 + r() * 0.3) },
         uColA: { value: cA }, uColB: { value: cB }, uColC: { value: cC },
       },
@@ -998,7 +1011,7 @@ function buildHUD(o) {
   let loading = document.querySelector('.w-loading');
   if (!loading) { loading = el('div', 'w-loading'); body.appendChild(loading); }
   const tip = isTouch() ? '左下角搖桿移動，右下角按鈕跳躍' : TIPS[Math.floor(Math.random() * TIPS.length)];
-  loading.innerHTML = `<div class="w-loading-inner"><div class="w-kicker">ICELAND · 3D WORLD</div>
+  if (!loading.querySelector('.w-bar i')) loading.innerHTML = `<div class="w-loading-inner"><div class="w-kicker">ICELAND · 3D WORLD</div>
     <h1 class="w-loading-title">${esc(o.title)}</h1><p class="w-loading-sub">${esc(o.subtitle)}</p>
     <div class="w-bar"><i></i></div><p class="w-loading-tip">${esc(tip)}</p></div>`;
 
@@ -1030,6 +1043,14 @@ function buildHUD(o) {
   (o.hints || []).forEach((h) => hintsEl.appendChild(el('span', 'w-chip w-chip-world glass', `<i></i>${esc(h)}`)));
 
   const bar = loading.querySelector('.w-bar i');
+  // surface script errors on the loading screen instead of hanging silently
+  const showErr = (msg) => {
+    if (!loading.isConnected || loading.classList.contains('w-done')) return;
+    const t = loading.querySelector('.w-loading-tip'); if (!t) return;
+    t.textContent = '⚠️ 載入失敗：' + msg; t.style.color = '#ff9b9b';
+  };
+  window.addEventListener('error', (e) => showErr(e.message || 'script error'));
+  window.addEventListener('unhandledrejection', (e) => showErr((e.reason && e.reason.message) || String(e.reason)));
   const info = hud.querySelector('.w-info'), infoImg = info.querySelector('.w-info-img');
   const toastEl = hud.querySelector('.w-toast');
   let toastTimer = 0, hintsHidden = false, current = null;
@@ -1088,7 +1109,7 @@ export async function createWorld(opts = {}) {
   }, opts);
   o.timeOfDay = tod;
   o.spawn = Object.assign({ x: 0, z: 0, yaw: Math.PI }, opts.spawn);
-  o.camera = Object.assign({ distance: 7.5, minDistance: 3, maxDistance: 16, pitch: 0.32, fov: 50, intro: true }, opts.camera);
+  o.camera = Object.assign({ distance: 7.5, minDistance: 3, maxDistance: 16, pitch: 0.32, fov: 50, intro: true, lookUp: tod === 'night' ? 2.0 : 0.7 }, opts.camera);
   o.player = Object.assign({ walk: 4.4, run: 8.4, jump: 8.6, light: tod === 'night' }, opts.player);
   o.water = opts.water ? Object.assign({ level: 0, slow: 0.55, maxDepth: 0.85 }, opts.water) : null;
 
@@ -1155,29 +1176,64 @@ export async function createWorld(opts = {}) {
   // colliders & ground
   const colliders = [], colliderSet = new Set();
   const STEP = 0.5, PR = 0.36;
-  function addCollider(x) {
+  function addCollider(x, opt = {}) {
     if (!x) return x;
-    if (Array.isArray(x)) { x.forEach(addCollider); return x; }
+    if (Array.isArray(x)) { x.forEach((c) => addCollider(c, opt)); return x; }
     if (x.isObject3D) {
       if (x.userData && x.userData.colliders) { addCollider(x.userData.colliders); return x; }
       x.updateWorldMatrix(true, true);
-      const box = new THREE.Box3().setFromObject(x), c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
-      const col = { x: c.x, z: c.z, r: (Math.max(s.x, s.z) / 2) * 0.85, top: box.max.y };
+      let col;
+      if (opt.shape === 'box' && x.geometry) {            // oriented box from the geometry's own bounds
+        if (!x.geometry.boundingBox) x.geometry.computeBoundingBox();
+        const bb = x.geometry.boundingBox, ws = new THREE.Vector3(), wq = new THREE.Quaternion(), wp = new THREE.Vector3();
+        x.matrixWorld.decompose(wp, wq, ws);
+        const ctr = bb.getCenter(new THREE.Vector3()).applyMatrix4(x.matrixWorld);
+        const rot = new THREE.Euler().setFromQuaternion(wq, 'YXZ').y;
+        const top = new THREE.Box3().setFromObject(x).max.y;
+        col = { x: ctr.x, z: ctr.z, w: (bb.max.x - bb.min.x) * ws.x, d: (bb.max.z - bb.min.z) * ws.z, rot, top };
+      } else {
+        const box = new THREE.Box3().setFromObject(x), c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
+        col = opt.shape === 'box' ? { x: c.x, z: c.z, w: s.x, d: s.z, rot: 0, top: box.max.y }
+          : { x: c.x, z: c.z, r: (Math.max(s.x, s.z) / 2) * 0.85, top: box.max.y };
+      }
+      if (opt.wall) delete col.top;
       colliders.push(col); colliderSet.add(col); x.userData.collider = col; return x;
     }
     if (typeof x.x === 'number' && typeof x.z === 'number' && !colliderSet.has(x)) {
-      if (x.r === undefined) x.r = 1;
+      if (x.w === undefined && x.r === undefined) x.r = 1;
+      if (x.w !== undefined) { x.d = x.d ?? x.w; x.rot = x.rot || 0; }
       colliders.push(x); colliderSet.add(x);
     }
     return x;
+  }
+  // world → box-local (inverse of a rotation.y = rot)
+  const toLocal = (c, x, z) => { const dx = x - c.x, dz = z - c.z, cs = Math.cos(c.rot), sn = Math.sin(c.rot); return [dx * cs - dz * sn, dx * sn + dz * cs]; };
+  const toWorld = (c, lx, lz) => { const cs = Math.cos(c.rot), sn = Math.sin(c.rot); return [c.x + lx * cs + lz * sn, c.z - lx * sn + lz * cs]; };
+  function insideCol(c, x, z) {
+    if (c.w === undefined) { const dx = x - c.x, dz = z - c.z; return dx * dx + dz * dz < c.r * c.r; }
+    const [lx, lz] = toLocal(c, x, z); return Math.abs(lx) <= c.w / 2 && Math.abs(lz) <= c.d / 2;
+  }
+  function pushOut(c, x, z) {          // returns [x, z] moved outside collider c (+ player radius)
+    if (c.w === undefined) {
+      const dx = x - c.x, dz = z - c.z, rr = c.r + PR, d2 = dx * dx + dz * dz;
+      if (d2 >= rr * rr) return null;
+      const d = Math.sqrt(d2) || 1e-4; return [c.x + (dx / d) * rr, c.z + (dz / d) * rr];
+    }
+    const [lx, lz] = toLocal(c, x, z), hw = c.w / 2, hd = c.d / 2;
+    if (Math.abs(lx) > hw + PR || Math.abs(lz) > hd + PR) return null;
+    const cx = clamp(lx, -hw, hw), cz = clamp(lz, -hd, hd), ex = lx - cx, ez = lz - cz, d = Math.hypot(ex, ez);
+    let nx, nz;
+    if (d > 1e-5) { if (d >= PR) return null; nx = cx + (ex / d) * PR; nz = cz + (ez / d) * PR; }
+    else if (hw - Math.abs(lx) < hd - Math.abs(lz)) { nx = Math.sign(lx || 1) * (hw + PR); nz = lz; }
+    else { nx = lx; nz = Math.sign(lz || 1) * (hd + PR); }
+    return toWorld(c, nx, nz);
   }
   function groundAt(x, z, fromY = Infinity) {
     let g = o.heightAt(x, z);
     for (let i = 0; i < colliders.length; i++) {
       const c = colliders[i];
       if (c.top === undefined || c.top <= g || c.top > fromY + STEP) continue;
-      const dx = x - c.x, dz = z - c.z;
-      if (dx * dx + dz * dz < c.r * c.r) g = c.top;
+      if (insideCol(c, x, z)) g = c.top;
     }
     return g;
   }
@@ -1337,8 +1393,7 @@ export async function createWorld(opts = {}) {
     for (let i = 0; i < colliders.length; i++) {
       const c = colliders[i];
       if (c.top !== undefined && pos.y + STEP >= c.top) continue;
-      const ddx = nx - c.x, ddz = nz - c.z, rr = c.r + PR, d2 = ddx * ddx + ddz * ddz;
-      if (d2 < rr * rr) { const d = Math.sqrt(d2) || 1e-4; nx = c.x + (ddx / d) * rr; nz = c.z + (ddz / d) * rr; }
+      const q = pushOut(c, nx, nz); if (q) { nx = q[0]; nz = q[1]; }
     }
     const bx = nx - o.boundsCenter.x, bz = nz - o.boundsCenter.z, bd = Math.hypot(bx, bz);
     if (bd > o.boundsRadius) { nx = o.boundsCenter.x + (bx / bd) * o.boundsRadius; nz = o.boundsCenter.z + (bz / bd) * o.boundsRadius; }
@@ -1407,7 +1462,7 @@ export async function createWorld(opts = {}) {
     let minY = o.heightAt(camera.position.x, camera.position.z) + 0.45;
     if (o.water) minY = Math.max(minY, o.water.level + 0.3);
     if (camera.position.y < minY) camera.position.y = minY;
-    camera.lookAt(camTarget.x, camTarget.y + Math.max(0, -pitch) * 2.5, camTarget.z);
+    camera.lookAt(camTarget.x, camTarget.y + o.camera.lookUp * (dist / o.camera.distance) + Math.max(0, -pitch) * 2.5, camTarget.z);
     // shadow camera follows the player
     sun.position.copy(pos).addScaledVector(sunDir, 90); sun.target.position.copy(pos);
   }

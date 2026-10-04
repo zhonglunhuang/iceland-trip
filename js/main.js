@@ -1286,12 +1286,14 @@
     requestAnimationFrame(frame);
   }
 
+  const playHero = () => { if (!introTl) return; (window.Intro && Intro.whenRevealed ? Intro.whenRevealed() : Promise.resolve()).then(() => introTl.play()); };
+
   function exitPreloader() {
     const pre = $('#preloader');
     html.classList.remove('is-loading');
     if (lenis) lenis.start();
     if (HAS_GSAP) ST.refresh();
-    if (!pre) { if (introTl) introTl.play(); return; }
+    if (!pre) { playHero(); return; }
     if (HAS_GSAP && !REDUCED) {
       const letters = $$('.preloader__word span', pre);
       letters.forEach((s) => { s.style.animation = 'none'; s.style.opacity = '1'; s.style.transform = 'none'; });
@@ -1300,12 +1302,12 @@
       tl.to(letters, { yPercent: -120, opacity: 0, duration: 0.7, stagger: 0.04, ease: 'power3.in' })
         .to(['.preloader__line', '.preloader__meta'], { opacity: 0, duration: 0.4 }, 0)
         .to(pre, { clipPath: 'inset(0% 0% 100% 0%)', duration: 1.15, ease: 'expo.inOut' }, 0.45)
-        .add(() => { if (introTl) introTl.play(); }, 0.75);
+        .add(playHero, 0.75);
     } else {
       pre.style.transition = 'opacity .6s ease';
       pre.style.opacity = '0';
       setTimeout(() => pre.remove(), 650);
-      if (introTl) introTl.play();
+      playHero();
     }
     // deep link (#day-d4 etc.)
     if (location.hash && location.hash.length > 1) {
