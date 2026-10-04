@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-Hant-TW" class="is-loading">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>冰島任務 · Fire &amp; Ice</title>
+  <meta name="description" content="冰島任務 · Fire &amp; Ice —— 十天、一千八百公里的冰島環島之旅。滑動頁面，跟著一號公路走過冰川、火山、瀑布與極光，還能走進 3D 虛擬空間。">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="冰島任務 · Fire &amp; Ice">
+  <meta property="og:description" content="十天。一千八百公里。冰川、火山、瀑布與極光 —— 一場冰與火的任務。">
+  <meta property="og:image" content="assets/img/aurora.jpg">
+  <meta property="og:locale" content="zh_TW">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237fe3ff'/%3E%3Cstop offset='.5' stop-color='%236bffb8'/%3E%3Cstop offset='1' stop-color='%23b38cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='15' fill='%23000'/%3E%3Cpath d='M10 20c10-8 22 4 44-6' stroke='url(%23g)' stroke-width='4' fill='none' stroke-linecap='round' opacity='.9'/%3E%3Cpath d='M6 52 22 30l8 9 10-15 18 28z' fill='url(%23g)'/%3E%3C/svg%3E">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&amp;display=swap" rel="stylesheet">
+  <link rel="preload" as="image" href="assets/img/aurora.jpg">
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body id="top">
+  <!-- ================= PRELOADER ================= -->
+  <div class="preloader" id="preloader" aria-hidden="true">
+    <div class="preloader__inner">
+      <div class="preloader__word">
+        <span>I</span><span>C</span><span>E</span><span>L</span><span>A</span><span>N</span><span>D</span>
+      </div>
+      <div class="preloader__line"><i id="preloaderBar"></i></div>
+      <div class="preloader__meta"><span>FIRE &amp; ICE</span><span id="preloaderPct">0%</span></div>
+    </div>
+  </div>
+
+  <!-- ================= NAV ================= -->
+  <div class="scroll-progress" aria-hidden="true"><i id="scrollProgress"></i></div>
+  <header class="nav" id="nav">
+    <div class="nav__inner">
+      <a class="nav__logo" href="#top" aria-label="回到頂端">ICELAND<i></i></a>
+      <nav class="nav__days" id="navDays" aria-label="每日行程"></nav>
+      <a class="nav__cta" href="#worlds" data-nav="worlds">3D 體驗</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ================= HERO ================= -->
+    <section class="hero" id="hero" aria-label="冰島任務">
+      <div class="hero__stage" id="heroStage">
+        <div class="hero__sky"></div>
+        <div class="hero__space" id="heroSpace">
+          <img class="hero__photo" src="assets/img/aurora.jpg" alt="" fetchpriority="high" decoding="async">
+          <canvas class="hero__stars" id="heroStars"></canvas>
+          <canvas class="hero__aurora" id="heroAurora"></canvas>
+          <div class="aurora-fallback" aria-hidden="true"><i></i><i></i><i></i></div>
+        </div>
+        <div class="hero__mtn hero__mtn--far" data-depth="0.25"><svg class="mtn-svg" viewBox="0 0 1600 600" preserveAspectRatio="xMidYMax slice" aria-hidden="true"></svg></div>
+        <div class="hero__mtn hero__mtn--mid" data-depth="0.55"><svg class="mtn-svg" viewBox="0 0 1600 600" preserveAspectRatio="xMidYMax slice" aria-hidden="true"></svg></div>
+        <div class="hero__mtn hero__mtn--near" data-depth="1"><svg class="mtn-svg" viewBox="0 0 1600 600" preserveAspectRatio="xMidYMax slice" aria-hidden="true"></svg></div>
+        <canvas class="hero__snow" id="heroSnow"></canvas>
+        <div class="hero__vignette"></div>
+
+        <div class="hero__content" id="heroContent">
+          <p class="hero__status" id="heroStatus" hidden></p>
+          <p class="eyebrow hero__eyebrow"><span class="eyebrow__line"></span>FIRE &amp; ICE · 10 DAYS</p>
+          <h1 class="hero__title" id="heroTitle">冰島任務</h1>
+          <p class="hero__dates" id="heroDates">2026.10.03 — 10.14</p>
+          <p class="hero__sub" id="heroSub">Fire &amp; Ice · 10 天環島</p>
+          <div class="hero__ctas">
+            <a class="btn btn--light" href="#manifesto">開始任務</a>
+            <a class="btn btn--glass" href="#worlds">進入 3D 體驗<span aria-hidden="true">→</span></a>
+          </div>
+        </div>
+
+        <a class="scroll-cue" href="#manifesto" aria-label="向下滑動">
+          <span>向下滑動</span>
+          <i></i>
+        </a>
+        <div class="hero__fade"></div>
+      </div>
+    </section>
+
+    <!-- ================= MANIFESTO ================= -->
+    <section class="manifesto" id="manifesto" aria-label="任務宣言">
+      <div class="manifesto__sticky">
+        <div class="manifesto__orb" aria-hidden="true"></div>
+        <p class="eyebrow manifesto__eyebrow">THE MISSION</p>
+        <p class="manifesto__text" id="manifestoText" data-grad="冰與火">十天。一千八百公里。
+冰川、火山、瀑布與極光。
+這不是旅行，是一場冰與火的任務。</p>
+      </div>
+    </section>
+
+    <!-- ================= STATS ================= -->
+    <section class="stats" id="stats" aria-label="旅程數字">
+      <div class="container">
+        <p class="eyebrow">BY THE NUMBERS</p>
+        <div class="stats__grid" id="statsGrid"></div>
+      </div>
+    </section>
+
+    <!-- ================= ROAD BAND ================= -->
+    <section class="band" id="band" aria-label="一號公路">
+      <div class="band__frame" id="bandFrame">
+        <img src="assets/img/ring-road.jpg" alt="冰島一號公路蜿蜒穿過火山丘陵" loading="lazy" decoding="async">
+        <div class="band__shade"></div>
+        <div class="band__copy">
+          <p class="eyebrow">ROUTE 1 · HRINGVEGUR</p>
+          <h2 class="band__title">一條路，<br>繞一整座島。</h2>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ROUTE MAP ================= -->
+    <section class="route" id="route" aria-label="環島路線圖">
+      <div class="route__sticky">
+        <div class="route__grid">
+          <div class="route__caption" id="routeCaption"></div>
+          <div class="route__map" id="routeMap"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= DAYS (rendered from TRIP) ================= -->
+    <div class="days" id="days"></div>
+
+    <!-- ================= WORLDS ================= -->
+    <section class="worlds" id="worlds" aria-label="3D 虛擬空間">
+      <div class="container">
+        <header class="section-head">
+          <p class="eyebrow">IMMERSIVE · WEBGL</p>
+          <h2 class="section-title">走進冰島 · <span class="grad-text">3D 虛擬空間</span></h2>
+          <p class="section-sub">用滑鼠或手指拖曳，在五個場景裡自由漫遊。蒸汽、浪花、冰山與極光，都是即時運算出來的。</p>
+        </header>
+        <div class="worlds__grid" id="worldsGrid"></div>
+      </div>
+    </section>
+
+    <!-- ================= FINALE ================= -->
+    <section class="finale" id="finale" aria-label="準備好了嗎">
+      <div class="finale__bg" aria-hidden="true">
+        <img src="assets/img/aurora.jpg" alt="" loading="lazy" decoding="async">
+        <canvas class="finale__aurora" id="finaleAurora"></canvas>
+        <div class="aurora-fallback"><i></i><i></i><i></i></div>
+      </div>
+      <div class="finale__content">
+        <p class="eyebrow" id="finaleDates">2026.10.03 — 10.14 · ICELAND</p>
+        <h2 class="finale__title"><span class="grad-text">準備好了嗎？</span></h2>
+        <p class="finale__sub">行李箱塞滿發熱衣，泡麵帶夠了。<br>冰川、火山與極光，在北緯 64 度等我們。</p>
+        <div class="finale__actions">
+          <a class="btn btn--light btn--lg" id="myMapLink" href="#" target="_blank" rel="noopener">開啟 Google 我的地圖<span aria-hidden="true">↗</span></a>
+          <a class="btn btn--glass btn--lg" href="#top" data-top>回到頂端<span aria-hidden="true">↑</span></a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================= FOOTER / CREDITS ================= -->
+  <footer class="footer" id="credits">
+    <div class="container">
+      <div class="footer__top">
+        <div class="footer__brand">ICELAND<i></i></div>
+        <p class="footer__note">冰島任務 · Fire &amp; Ice —— 行程資料來自 <code>data/itinerary.js</code>，路線來自 Google My Maps。</p>
+      </div>
+      <h2 class="footer__title">照片來源 Photo Credits</h2>
+      <p class="footer__lede">本站照片皆來自 Wikimedia Commons，依各自的創用 CC 授權使用，點擊可查看原始頁面與完整授權。</p>
+      <ul class="credits" id="creditsList"></ul>
+      <p class="footer__copy">Made with ice &amp; fire for the crew · 2026</p>
+    </div>
+  </footer>
+
+  <!-- data (script tags so it works from file:// too) -->
+  <script src="data/itinerary.js"></script>
+  <script src="data/route.js"></script>
+  <script src="data/credits.js"></script>
+  <!-- photo FX overlays (optional) -->
+  <script src="js/fx.js"></script>
+  <!-- motion libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
