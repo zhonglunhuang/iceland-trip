@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Drive Interlude QA</title>
+  <meta name="color-scheme" content="dark">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; background: #000; color: #f5f5f7; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Noto Sans TC", sans-serif; -webkit-font-smoothing: antialiased; overflow-x: clip; }
+    .qa-intro { min-height: 70vh; display: grid; place-content: center; text-align: center; padding: 0 16px; }
+    .qa-intro h1 { margin: 0; font-size: clamp(40px, 9vw, 120px); line-height: 1; letter-spacing: -.045em; font-weight: 800;
+      background: linear-gradient(90deg, #7fe3ff, #6bffb8 50%, #b38cff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .qa-intro p { color: rgba(255,255,255,.6); margin: 18px 0 0; font-size: 15px; }
+    .qa-intro code { color: #6bffb8; }
+    .qa-intro nav { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+    .qa-intro nav a { color: #fff; text-decoration: none; font-size: 13px; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.06); }
+    /* dummy day chapters */
+    section[data-day] { position: relative; min-height: 110vh; display: flex; flex-direction: column; justify-content: center; padding: 0 max(16px, 6vw);
+      background: radial-gradient(80% 60% at 30% 30%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%), #000; }
+    section[data-day] .k { font-size: 12px; letter-spacing: .3em; color: var(--accent); font-weight: 700; }
+    section[data-day] h2 { margin: 10px 0 0; font-size: clamp(48px, 12vw, 160px); line-height: .95; letter-spacing: -.05em; font-weight: 800; }
+    section[data-day] p { margin: 14px 0 0; color: rgba(255,255,255,.62); font-size: clamp(15px, 1.6vw, 20px); }
+    .qa-badge { position: fixed; top: 10px; right: 10px; z-index: 50; font: 600 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #6bffb8;
+      background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 6px 9px; pointer-events: none; white-space: pre; }
+    footer { padding: 30vh 16px; text-align: center; color: rgba(255,255,255,.4); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header class="qa-intro">
+    <h1>ON THE ROAD</h1>
+    <p>往下捲動 —— 每一章之間都有一段夜間環島公路。<br><code>js/drive.js</code> QA page</p>
+    <nav>
+      <a href="?">GSAP</a>
+      <a href="?nogsap=1">no GSAP (rAF)</a>
+      <a href="?lenis=1">+ Lenis</a>
+      <a href="?reduced=1">reduced motion</a>
+    </nav>
+  </header>
+
+  <main id="days">
+    <section data-day="d0" style="--accent:#8ab4ff"><span class="k">DAY 00 · 10/3</span><h2>出發</h2><p>桃園 → 阿姆斯特丹（沒有路線：不會插入 interlude 之前的章節）</p></section>
+    <section data-day="d1" style="--accent:#7fd6e8"><span class="k">DAY 01 · 10/4</span><h2>降落冰與火之地</h2><p>藍湖溫泉 · 雷克雅維克夜遊</p></section>
+    <section data-day="d2" style="--accent:#f5c45e"><span class="k">DAY 02 · 10/5</span><h2>金圈</h2><p>大陸裂谷 · 間歇泉 · 黃金瀑布</p></section>
+    <section data-day="d3" style="--accent:#a8b4c4"><span class="k">DAY 03 · 10/6</span><h2>南岸瀑布與黑沙</h2><p>水簾洞 · 彩虹瀑布 · 黑沙灘 · 黑冰洞</p></section>
+    <section data-day="d5" style="--accent:#4aa8ff"><span class="k">DAY 05 · 10/8</span><h2>藍冰洞 · 白日夢冒險王</h2><p>水晶冰洞 · 東部峽灣 · 彩虹教堂</p></section>
+    <section data-day="d6" style="--accent:#ff8a5c"><span class="k">DAY 06 · 10/9</span><h2>米湖 · 火山之心</h2><p>玄武岩峽谷 · 歐洲最大瀑布 · 地熱谷</p></section>
+    <section data-day="d10" style="--accent:#ffd36e"><span class="k">DAY 10 · 10/13</span><h2>荷蘭 · 羊角村</h2><p>飛行日：routesOnly 預設會跳過，不插入公路段</p></section>
+  </main>
+  <footer>end of QA</footer>
+  <div class="qa-badge" id="qaBadge">loading…</div>
+
+  <script src="data/itinerary.js"></script>
+  <script src="data/route.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <script src="js/drive.js"></script>
+  <script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var badge = document.getElementById('qaBadge');
+
+    function start() {
+      if (q.has('nogsap')) { window.gsap = null; window.ScrollTrigger = null; }
+      if (window.gsap && window.ScrollTrigger) window.gsap.registerPlugin(window.ScrollTrigger);
+
+      var opts = { daySelector: '[data-day]' };
+      if (q.has('reduced')) opts.reducedMotion = true;
+      var n = window.Drive ? window.Drive.mountAll(opts) : -1;
+
+      // QA hook: ?goto=<index>&p=<0..1> jumps into an interlude at a progress point
+      if (q.has('goto')) {
+        var el = document.querySelectorAll('.drive-interlude')[+q.get('goto') || 0];
+        if (el) {
+          var p = Math.max(0, Math.min(1, parseFloat(q.get('p') || '0.5')));
+          var sh = el.querySelector('.drive__stage').clientHeight, lead = sh * 0.35;
+          var top = el.getBoundingClientRect().top + window.pageYOffset;
+          window.scrollTo(0, top - lead + p * (el.offsetHeight - sh + lead * 2));
+        }
+      }
+
+      // tiny fps meter for smoothness checks
+      var frames = 0, t0 = performance.now(), fps = 0;
+      (function meter(t) {
+        frames++;
+        if (t - t0 > 1000) { fps = Math.round(frames * 1000 / (t - t0)); frames = 0; t0 = t; }
+        badge.textContent = 'interludes: ' + n + '  ' + (window.gsap ? 'gsap.ticker' : 'rAF') + (window.__lenis ? '+lenis' : '') +
+          (q.has('reduced') ? '  static' : '') + '\nfps: ' + fps + '  km d1..d9: ' +
+          ['d1','d2','d3','d4','d5','d6','d7','d8','d9'].map(function (d) { return window.Drive.km(d); }).join('/');
+        requestAnimationFrame(meter);
+      })(performance.now());
+      document.documentElement.setAttribute('data-qa-ready', String(n));
+    }
+
+    if (q.has('lenis')) {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js';
+      s.onload = function () {
+        var lenis = new window.Lenis({ duration: 1.15, smoothWheel: true });
+        window.__lenis = lenis;
+        if (window.gsap && window.ScrollTrigger) {
+          lenis.on('scroll', window.ScrollTrigger.update);
+          window.gsap.ticker.add(function (time) { lenis.raf(time * 1000); });
+          window.gsap.ticker.lagSmoothing(0);
+        } else {
+          (function raf(t) { lenis.raf(t); requestAnimationFrame(raf); })(performance.now());
+        }
+        start();
+      };
+      s.onerror = start;
+      document.head.appendChild(s);
+    } else {
+      start();
+    }
+  })();
+  </script>
+</body>
+</html>

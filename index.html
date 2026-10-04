@@ -11,7 +11,8 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="冰島任務 · Fire &amp; Ice">
   <meta property="og:description" content="十天。一千八百公里。冰川、火山、瀑布與極光 —— 一場冰與火的任務。">
-  <meta property="og:image" content="assets/img/aurora.jpg">
+  <meta property="og:image" content="https://zhonglunhuang.github.io/iceland-trip/assets/og.jpg">
+  <meta property="og:url" content="https://zhonglunhuang.github.io/iceland-trip/">
   <meta property="og:locale" content="zh_TW">
   <meta name="twitter:card" content="summary_large_image">
 
@@ -22,6 +23,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&amp;display=swap" rel="stylesheet">
   <link rel="preload" as="image" href="assets/img/aurora.jpg">
   <link rel="stylesheet" href="css/main.css">
+  <noscript><style>.preloader{display:none}html.is-loading,html.is-loading body{overflow:auto}.nav{opacity:1!important}</style></noscript>
 </head>
 <body id="top">
   <!-- ================= PRELOADER ================= -->
@@ -132,7 +134,7 @@
         <header class="section-head">
           <p class="eyebrow">IMMERSIVE · WEBGL</p>
           <h2 class="section-title">走進冰島 · <span class="grad-text">3D 虛擬空間</span></h2>
-          <p class="section-sub">用滑鼠或手指拖曳，在五個場景裡自由漫遊。蒸汽、浪花、冰山與極光，都是即時運算出來的。</p>
+          <p class="section-sub">用滑鼠或手指拖曳，在冰島的經典場景裡自由漫遊。蒸汽、浪花、冰山與極光，全部即時運算。</p>
         </header>
         <div class="worlds__grid" id="worldsGrid"></div>
       </div>
@@ -181,6 +183,14 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+  <!-- 沉浸模組 -->
+  <script src="js/drive.js"></script>
+  <script src="js/ambient.js"></script>
+  <script src="js/cinema.js"></script>
   <script src="js/main.js"></script>
+  <script>
+    window.Ambient && (Ambient.init({ button: true }), Ambient.autoBind('[data-fx]'));
+    window.Cinema && Cinema.init();
+  </script>
 </body>
 </html>

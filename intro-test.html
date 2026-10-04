@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Intro Test · 冰島任務</title>
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&amp;display=swap" rel="stylesheet">
+  <link rel="preload" as="image" href="assets/img/aurora.jpg">
+  <style>
+    :root {
+      --bg: #000; --fg: #f5f5f7; --dim: rgba(245,245,247,.6);
+      --glass: rgba(255,255,255,.07); --line: rgba(255,255,255,.14);
+      --ease: cubic-bezier(.2,.8,.2,1);
+      --grad: linear-gradient(100deg, #7fe3ff, #6bffb8 50%, #b38cff);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--fg); }
+    body { font-family: -apple-system, "SF Pro Display", "Noto Sans TC", "PingFang TC", sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: inherit; }
+    .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: rgba(0,0,0,.45); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); border-bottom: 1px solid var(--line); font-size: 14px; }
+    .nav b { letter-spacing: .08em; }
+    .hero { position: relative; min-height: 100vh; display: grid; place-items: center; text-align: center; overflow: hidden; padding: 0 16px; }
+    .hero__bg { position: absolute; inset: 0; background: url(assets/img/aurora.jpg) center 60% / cover; transform: scale(1.15); filter: brightness(.55); }
+    .hero__bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.2), rgba(0,0,0,.1) 50%, #000); }
+    .hero__in { position: relative; }
+    .hero h1 { margin: 0; font-size: clamp(64px, 17vw, 220px); font-weight: 900; letter-spacing: -.035em; line-height: 1; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .hero p { margin: 18px 0 0; letter-spacing: .3em; color: var(--dim); font-size: 14px; }
+    section.block { max-width: 980px; margin: 0 auto; padding: 18vh 20px; }
+    .block h2 { font-size: clamp(36px, 7vw, 80px); letter-spacing: -.03em; margin: 0 0 16px; }
+    .days { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .day { padding: 20px; border-radius: 20px; background: var(--glass); border: 1px solid var(--line); }
+    .day small { color: var(--dim); letter-spacing: .1em; }
+    .day h3 { margin: 8px 0 4px; font-size: 20px; }
+    .day p { margin: 0; color: var(--dim); font-size: 14px; }
+
+    .panel { position: fixed; left: 16px; bottom: 16px; z-index: 30; width: min(360px, calc(100vw - 32px)); padding: 14px; border-radius: 18px; background: rgba(20,22,28,.6); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--line); font-size: 13px; }
+    .panel__row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .panel button { flex: 1 1 auto; padding: 9px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--fg); font: inherit; cursor: pointer; transition: background .3s var(--ease); }
+    .panel button:hover { background: rgba(255,255,255,.14); }
+    .panel pre { margin: 10px 0 0; max-height: 150px; overflow: auto; font: 11px/1.5 ui-monospace, Menlo, monospace; color: #9fe9c8; white-space: pre-wrap; }
+    .panel__hint { margin: 8px 0 0; color: var(--dim); font-size: 11px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <!-- dummy page underneath the intro -->
+  <nav class="nav"><b>冰島任務</b><span>Intro test page</span></nav>
+  <header class="hero">
+    <div class="hero__bg"></div>
+    <div class="hero__in">
+      <h1 id="dummyTitle">冰島任務</h1>
+      <p id="dummySub">FIRE &amp; ICE · 10 天環島</p>
+    </div>
+  </header>
+  <section class="block">
+    <h2>十天的路線</h2>
+    <div class="days" id="days"></div>
+  </section>
+  <section class="block">
+    <h2>捲動測試</h2>
+    <p style="color:var(--dim);line-height:1.8">開場動畫播放時，這個頁面不該能被捲動（滑鼠滾輪、觸控、鍵盤 Space / PageDown 都要被擋住）。動畫結束或略過後恢復。</p>
+    <div style="height:120vh"></div>
+  </section>
+
+  <div class="panel">
+    <div class="panel__row">
+      <button type="button" id="btnReplay">重播（含開始畫面）</button>
+      <button type="button" id="btnDirect">直接播放</button>
+      <button type="button" id="btnReset">清除 session</button>
+    </div>
+    <pre id="log"></pre>
+    <p class="panel__hint">URL 參數：<code>?intro=1</code> 強制播放 · <code>?intro=0</code> 不播 · <code>?seek=5&amp;freeze=1</code> 跳到第 5 秒並停格（檢查畫面用）</p>
+  </div>
+
+  <script src="data/itinerary.js"></script>
+  <!-- real ambient engine if another agent has shipped it; a 404 is harmless -->
+  <script src="js/ambient.js"></script>
+  <script>
+    (function () {
+      var logEl = document.getElementById('log');
+      window.__log = function (msg) {
+        var t = (performance.now() / 1000).toFixed(2).padStart(6, ' ');
+        logEl.textContent += t + 's  ' + msg + '\n';
+        logEl.scrollTop = logEl.scrollHeight;
+      };
+      // Wrap the real Ambient (or provide a mock) so the hook calls are visible.
+      var real = window.Ambient;
+      var wrapped = {};
+      ['play', 'setScene', 'sfx'].forEach(function (m) {
+        wrapped[m] = function (arg) {
+          __log('Ambient.' + m + '(' + (arg !== undefined ? JSON.stringify(arg) : '') + ')' + (real ? '' : '  [mock]'));
+          if (real && typeof real[m] === 'function') return real[m].apply(real, arguments);
+        };
+      });
+      window.Ambient = real ? Object.assign(Object.create(real), wrapped) : wrapped;
+
+      // fill the dummy page from TRIP
+      var T = window.TRIP || {};
+      if (T.title) document.getElementById('dummyTitle').textContent = T.title;
+      if (T.subtitle) document.getElementById('dummySub').textContent = T.subtitle;
+      var days = document.getElementById('days');
+      (T.days || []).forEach(function (d) {
+        var el = document.createElement('div');
+        el.className = 'day';
+        el.innerHTML = '<small></small><h3></h3><p></p>';
+        el.children[0].textContent = (d.date || '') + ' 週' + (d.weekday || '');
+        el.children[1].textContent = d.title || '';
+        el.children[2].textContent = d.subtitle || '';
+        el.style.borderColor = (d.accent || '#fff') + '44';
+        days.appendChild(el);
+      });
+    })();
+  </script>
+  <script src="js/intro.js"></script>
+  <script>
+    (function () {
+      ['open', 'start', 'reveal', 'done'].forEach(function (n) {
+        window.addEventListener('intro:' + n, function (e) { __log('event intro:' + n + ' ' + JSON.stringify(e.detail || {})); });
+      });
+      var q = new URLSearchParams(location.search);
+      var opts = {
+        onStart: function () { __log('onStart()'); },
+        onReveal: function (i) { __log('onReveal() ' + JSON.stringify(i)); },
+        onDone: function (i) { __log('onDone() ' + JSON.stringify(i) + '  scroll restored: ' + (getComputedStyle(document.body).overflow !== 'hidden')); }
+      };
+      if (q.has('seek')) {
+        // test hook: jump straight into the film at a given second (optionally frozen)
+        Intro.init(Object.assign({}, opts, { force: true, immediate: true, seek: parseFloat(q.get('seek')) || 0, freeze: q.has('freeze') }));
+      } else {
+        __log('Intro.init() → ' + Intro.init(opts));
+      }
+      Intro.whenRevealed().then(function (i) { __log('whenRevealed resolved ' + JSON.stringify(i)); });
+      Intro.whenDone().then(function (i) { __log('whenDone resolved ' + JSON.stringify(i)); });
+
+      document.getElementById('btnReplay').onclick = function () { __log('Intro.play() → ' + Intro.play()); };
+      document.getElementById('btnDirect').onclick = function () { __log('Intro.play({immediate:true}) → ' + Intro.play({ immediate: true })); };
+      document.getElementById('btnReset').onclick = function () { Intro.reset(); __log('session flag cleared — reload to see the gate again'); };
+    })();
+  </script>
+</body>
+</html>

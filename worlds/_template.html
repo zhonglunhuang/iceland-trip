@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <title>雪原極光 · 3D 範本</title>
+  <!-- 1) import map: copy as-is -->
+  <script type="importmap">
+  {"imports":{
+    "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }}
+  </script>
+  <!-- 2) HUD styles -->
+  <link rel="stylesheet" href="world.css">
+</head>
+<body>
+<script type="module">
+/*
+ * ── TEMPLATE WORLD ─────────────────────────────────────────────
+ * Copy this file to worlds/<id>.html and replace the scene.
+ * Everything (renderer, lights, sky, player, camera, HUD, mobile
+ * joystick, photo mode) comes from engine.js — see its header docs.
+ */
+import * as THREE from 'three';
+import { createWorld, helpers } from './engine.js';
+const { fbm, smoothstep, lerp } = helpers;
+
+// ── 1. Ground: ONE height function shared by the terrain mesh and the player ──
+const POOL = { x: 9, z: -6, r: 6, level: 0.35 };          // small hot spring
+const BASALT = { x: -13, z: -9 };
+
+function H(x, z) {
+  const d = Math.hypot(x, z);
+  let h = fbm(x * 0.018, z * 0.018, 4) * 2.4;              // gentle snowy hills
+  h += smoothstep(50, 105, d) * 16 * (0.65 + 0.35 * fbm(x * 0.03, z * 0.03, 3)); // mountains on the rim
+  h = lerp(0.6, h, smoothstep(4, 14, Math.hypot(x, z - 14)));                   // flat spawn
+  const pd = Math.hypot(x - POOL.x, z - POOL.z);
+  h = lerp(0.6, h, smoothstep(POOL.r, POOL.r + 8, pd));                          // flatten around pool
+  return Math.min(h, -0.45 + Math.pow(pd / POOL.r, 2) * 1.15);                   // carve the bowl
+}
+
+const snow = new THREE.Color(0xeef4fa), rock = new THREE.Color(0x3a3f47), gravel = new THREE.Color(0x4b4f56);
+function colorFn(x, y, z, slopeY) {
+  const c = snow.clone().lerp(rock, smoothstep(0.86, 0.68, slopeY));           // steep = dark rock
+  const pd = Math.hypot(x - POOL.x, z - POOL.z);
+  return c.lerp(gravel, 1 - smoothstep(POOL.r * 0.75, POOL.r * 1.15, pd));       // wet gravel shore
+}
+
+// ── 2. Create the world ──
+const w = await createWorld({
+  title: '雪原極光',
+  subtitle: 'Snowfield · 範本世界',
+  backHref: '../index.html#worlds',
+  timeOfDay: 'night',
+  background: 0x0b1626,
+  fog: { color: 0x0b1626, near: 30, far: 230 },
+  spawn: { x: 0, z: 14 },                     // faces −Z by default (yaw = Math.PI)
+  boundsRadius: 70,
+  heightAt: H,
+  water: { level: POOL.level, slow: 0.5 },
+  bloom: { strength: 0.75, radius: 0.7, threshold: 0.85 },
+  hints: ['走進溫泉泡一下', '跳上玄武岩柱'],
+  info: [
+    { at: { x: POOL.x, z: POOL.z }, radius: 6.5, title: '野溪溫泉', text: '地熱把雪水加熱到 38°C。冰島人一年四季都泡，零下也不怕。' },
+    { at: BASALT, radius: 5, title: '玄武岩柱', text: '熔岩冷卻收縮時裂成六角形柱子。一格一格跳上去看看！' },
+    { at: { x: 0, z: -24 }, radius: 5, title: '抬頭看', text: '綠色的光幕是太陽風撞上大氣層的氧原子。拖曳畫面往上看。', marker: true },
+  ],
+});
+const { scene } = w;
+
+// ── 3. Build the scene with helpers ──
+scene.add(helpers.createTerrain({ size: 240, segments: 200, heightFn: H, colorFn }));
+scene.add(helpers.createStars(3200));
+scene.add(helpers.createAurora({ count: 3, direction: 0, intensity: 1.1 }));
+scene.add(helpers.createSnow({ count: 2200, speed: 1.1, size: 0.1 }));
+
+const pool = helpers.createWater({ radius: POOL.r, level: POOL.level, color: 0x6fd3e0, deepColor: 0x12475a, glow: 0.35, waveAmp: 0.04, waveScale: 2.5 });
+pool.position.set(POOL.x, POOL.level, POOL.z);
+scene.add(pool);
+scene.add(helpers.createSteam({ sources: [{ x: POOL.x, z: POOL.z, r: POOL.r * 0.7, y: POOL.level }], count: 110, height: 6, opacity: 0.16 }));
+
+scene.add(helpers.createRocks({                // colliders are registered automatically
+  count: 42, radius: 60, minSize: 0.4, maxSize: 2.6, color: 0x3a3e45, snowCap: 0.45,
+  avoid: [{ x: POOL.x, z: POOL.z, r: POOL.r + 2 }, { x: BASALT.x, z: BASALT.z, r: 6 }, { x: 0, z: -24, r: 4 }],
+}));
+scene.add(helpers.createBasaltColumns({         // climbable staircase (tallest in the middle)
+  center: BASALT, radius: 4.6, heightFn: (lx, lz, d01, rnd) => 0.35 + (1 - d01) * 2.8 + rnd() * 0.25,
+}));
+
+// glossy ice chunks
+const ice = new THREE.Group();
+[[16, 8, 1.6], [18.5, 6.5, 1.0], [15, 4.5, 0.7]].forEach(([x, z, s], i) => {
+  const m = helpers.createIce({ size: s, seed: i + 1 });
+  m.position.set(x, H(x, z) + s * 0.35, z); m.rotation.y = i * 1.3;
+  ice.add(m); w.addCollider({ x, z, r: s * 0.9 });
+});
+scene.add(ice);
+
+// warm lanterns along the path (glow sprite + small point light)
+[[-3, 6], [3, 0], [-2, -8]].forEach(([x, z]) => {
+  const y = H(x, z);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.6, 8), new THREE.MeshStandardMaterial({ color: 0x3b2b20, roughness: 0.9 }));
+  pole.position.set(x, y + 0.8, z); pole.castShadow = true; scene.add(pole);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
+  bulb.position.set(x, y + 1.7, z); scene.add(bulb);
+  const glow = helpers.createGlow({ color: 0xffc98a, size: 2.2 }); glow.position.copy(bulb.position); scene.add(glow);
+  const light = new THREE.PointLight(0xffc98a, 4, 9, 2); light.position.copy(bulb.position); scene.add(light);
+  w.addCollider({ x, z, r: 0.25 });
+});
+
+// ── 4. Per-frame logic (optional) ──
+w.onUpdate((dt, t) => { ice.children.forEach((m, i) => { m.rotation.y += dt * 0.03 * (i % 2 ? 1 : -1); }); });
+
+// ── 5. Go! ──
+w.start();
+</script>
+</body>
+</html>

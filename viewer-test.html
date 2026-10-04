@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Viewer QA · 走進風景</title>
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <style>
+    :root {
+      --bg: #000; --fg: #f5f5f7; --muted: #86868b;
+      --grad: linear-gradient(90deg, #7fe3ff 0%, #6bffb8 48%, #b38cff 100%);
+      --ease: cubic-bezier(.2, .8, .2, 1);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Noto Sans TC", "PingFang TC", sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { background: var(--bg); color-scheme: dark; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); -webkit-font-smoothing: antialiased; line-height: 1.6; }
+    .wrap { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+    @media (min-width: 720px) { .wrap { padding: 0 40px; } }
+
+    header { padding: clamp(72px, 12vw, 140px) 0 clamp(40px, 6vw, 72px); }
+    .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 0; }
+    h1 { font-size: clamp(44px, 8vw, 104px); line-height: 1.02; letter-spacing: -.04em; font-weight: 700; margin: 14px 0 0; }
+    h1 span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lede { max-width: 640px; font-size: clamp(17px, 1.6vw, 21px); color: #a1a1a6; margin: 18px 0 0; }
+
+    .toolbar { position: sticky; top: 12px; z-index: 50; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 8px; border-radius: 999px; margin: 0 0 32px; width: fit-content; max-width: 100%;
+      background: rgba(22, 22, 26, .58); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(255,255,255,.12); }
+    .toolbar button, .toolbar a { appearance: none; border: 0; font: 600 13px/1 var(--font); color: #fff; background: rgba(255,255,255,.1);
+      height: 34px; padding: 0 14px; border-radius: 999px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+    .toolbar button:hover, .toolbar a:hover { background: rgba(255,255,255,.18); }
+    .toolbar button[aria-pressed="true"] { background: #f5f5f7; color: #000; }
+    .toolbar output { font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #a1a1a6; padding: 0 10px; white-space: nowrap; }
+
+    .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+    .card { border-radius: 28px; overflow: hidden; background: #0b0b0d; border: 1px solid rgba(255,255,255,.08);
+      transition: transform .6s var(--ease), border-color .4s; }
+    .card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,.16); }
+    .card.is-wide { grid-column: 1 / -1; }
+    .card__media { position: relative; aspect-ratio: 4 / 3; overflow: hidden; }
+    .card.is-wide .card__media { aspect-ratio: 21 / 9; }
+    .card__media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+    .card__day { position: absolute; left: 14px; top: 14px; z-index: 3; font-size: 11px; font-weight: 700; letter-spacing: .14em;
+      padding: 6px 10px; border-radius: 999px; background: rgba(0,0,0,.35); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+    .card__body { padding: 18px 22px 22px; }
+    .card__body h3 { margin: 0; font-size: 24px; letter-spacing: -.02em; line-height: 1.2; }
+    .card__body p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+    .card__body a { color: #7fe3ff; font-size: 13px; text-decoration: none; display: inline-block; margin-top: 10px; }
+
+    .spacer { height: 110vh; display: grid; place-items: center; color: #3a3a3c; font-size: 14px; letter-spacing: .1em; }
+    .log { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #6e6e73; background: #0b0b0d; border-radius: 18px;
+      padding: 14px 16px; max-height: 220px; overflow: auto; border: 1px solid rgba(255,255,255,.06); margin: 32px 0 80px; }
+    .checklist { color: #a1a1a6; font-size: 14px; margin: 40px 0 0; padding-left: 18px; }
+    .checklist li { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <p class="eyebrow">QA · js/viewer.js</p>
+      <h1>走進<span>風景</span></h1>
+      <p class="lede">點任何一張照片，照片會從卡片放大成全螢幕的偽 3D 場景。移動滑鼠（手機請傾斜）感受景深，← → 切換景點，Esc 關閉。</p>
+    </header>
+
+    <div class="toolbar" role="toolbar" aria-label="QA 工具">
+      <button type="button" id="btnDepth" aria-pressed="false">深度圖</button>
+      <button type="button" id="btnOpen">Viewer.open('gullfoss')</button>
+      <a id="lnkMode" href="?nogl">改用 CSS 後備</a>
+      <output id="stats">—</output>
+    </div>
+
+    <section class="grid" id="grid" aria-label="景點卡片"></section>
+
+    <ol class="checklist">
+      <li>FLIP：從卡片圖片無縫放大 / 關閉時縮回同一張卡片（切換到別的景點後關閉 → 卡片不在畫面中則淡出）。</li>
+      <li>深度視差跟著滑鼠；閒置 ~3 秒後鏡頭自動緩慢漂移；開啟時有一次景深推進。</li>
+      <li>FX 特效疊在照片上（瀑布 / 間歇泉 / 冰河 / 極光 / 冰洞）。</li>
+      <li>開啟時頁面不能捲動；關閉後焦點回到原本的卡片圖片。</li>
+      <li>?nogl 會改用 CSS 視差後備模式；file:// 開啟時也會自動退回。</li>
+    </ol>
+
+    <div class="spacer">↓ 捲動測試（開啟 Viewer 時應該鎖住）</div>
+
+    <section class="grid" aria-label="更多卡片">
+      <article class="card is-wide" data-spot-id="reynisfjara">
+        <div class="card__media"><span class="card__day">DAY 3</span><img src="assets/img/reynisfjara.jpg" alt="黑沙灘 玄武岩" loading="lazy" decoding="async"></div>
+        <div class="card__body"><h3>黑沙灘 玄武岩</h3><p>Reynisfjara · waves</p></div>
+      </article>
+    </section>
+
+    <pre class="log" id="log" aria-live="off"></pre>
+  </main>
+
+  <script src="data/itinerary.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/viewer.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var logEl = document.getElementById('log');
+      function log() {
+        var line = Array.prototype.map.call(arguments, function (a) { return typeof a === 'string' ? a : JSON.stringify(a); }).join(' ');
+        logEl.textContent = (new Date().toLocaleTimeString() + '  ' + line + '\n' + logEl.textContent).slice(0, 6000);
+      }
+
+      // Optional sound module: load js/ambient.js if present, else install a logging mock.
+      function installMock() {
+        if (window.Ambient) return;
+        var scene = null, on = true;
+        window.Ambient = {
+          __mock: true,
+          setScene: function (t) { scene = t; log('Ambient.setScene', t); },
+          getScene: function () { return scene; },
+          sfx: function (n) { log('Ambient.sfx', n); },
+          isOn: function () { return on; }
+        };
+        log('Ambient mock installed (js/ambient.js not found)');
+      }
+      var s = document.createElement('script');
+      s.src = 'js/ambient.js';
+      s.onload = function () { if (!window.Ambient) installMock(); else log('js/ambient.js loaded'); };
+      s.onerror = installMock;
+      document.head.appendChild(s);
+
+      var noGL = /[?&]nogl\b/.test(location.search);
+      Viewer.configure({ webgl: !noGL });
+      var lnk = document.getElementById('lnkMode');
+      if (noGL) { lnk.textContent = '改回 WebGL'; lnk.href = location.pathname; }
+
+      // Build cards from the real itinerary data
+      var IDS = ['skogafoss', 'geysir', 'jokulsarlon', 'kirkjufell', 'crystal-ice-cave'];
+      var byId = {};
+      (window.TRIP.days || []).forEach(function (d) { (d.spots || []).forEach(function (sp) { byId[sp.id] = { s: sp, d: d }; }); });
+      var grid = document.getElementById('grid');
+      grid.innerHTML = IDS.map(function (id, i) {
+        var x = byId[id]; if (!x) return '';
+        var n = String(x.d.id).replace(/\D/g, '');
+        return '<article class="card' + (i === 0 ? ' is-wide' : '') + '" data-spot-id="' + id + '">' +
+          '<div class="card__media" data-fx="' + x.s.fx + '" data-accent="' + x.d.accent + '"><span class="card__day">DAY ' + n + '</span>' +
+          '<img src="assets/img/' + (x.s.img || x.s.id) + '.jpg" alt="' + x.s.title + '" loading="lazy" decoding="async"></div>' +
+          '<div class="card__body"><h3>' + x.s.title + '</h3><p>' + x.s.en + ' · ' + x.s.fx + '</p>' +
+          (x.s.map ? '<a href="' + x.s.map + '" target="_blank" rel="noopener">Google Maps ↗</a>' : '') + '</div></article>';
+      }).join('');
+
+      // Simulate the main site: FX overlays + Ken Burns on the card images
+      document.querySelectorAll('.card__media').forEach(function (m, i) {
+        var img = m.querySelector('img');
+        if (window.FX) {
+          if (i % 2 === 0) FX.kenBurns(img);
+          FX.mount(m, m.getAttribute('data-fx') || 'mist', { accent: m.getAttribute('data-accent') || '#7fe3ff' });
+        }
+      });
+
+      Viewer.autoBind('[data-spot-id]');
+
+      document.getElementById('btnOpen').addEventListener('click', function () { Viewer.open('gullfoss'); });
+      var btnDepth = document.getElementById('btnDepth');
+      btnDepth.addEventListener('click', function () {
+        var on = Viewer.debugDepth();
+        btnDepth.setAttribute('aria-pressed', String(on));
+        log('debugDepth', on);
+      });
+
+      ['viewer:open', 'viewer:change', 'viewer:close'].forEach(function (n) {
+        window.addEventListener(n, function (e) { log(n, e.detail ? e.detail.id + ' (' + (e.detail.index + 1) + '/' + e.detail.total + ')' : ''); });
+      });
+
+      var out = document.getElementById('stats');
+      setInterval(function () {
+        var st = Viewer.stats;
+        out.textContent = 'mode ' + Viewer.mode + (st.open ? ' · ' + st.phase + ' · ' + st.fps + 'fps · scale ' + st.renderScale.toFixed(2) +
+          (st.canvas ? ' · ' + st.canvas.join('×') : '') : '') + ' · gyro ' + st.gyro;
+      }, 500);
+    })();
+  </script>
+</body>
+</html>

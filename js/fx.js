@@ -201,41 +201,42 @@
    *   src:   geyser vent {x, y, h: jet height, r: pool radius (fraction of width)}
    *   area:  region for waves / ripple / steam / drift / city {x0,y0,x1,y1}
    *   vp:    vanishing point for drive {x,y};  road:false hides road dashes
-   *   sun:   light source for sunset {x,y}
+   *   sun:   light source for sunset {x,y};  lane: road centre-line offset (fraction of width)
+   *   ar/fp: aspect ratio + 4x4 luminance fingerprint of the photo the hint was calibrated on —
+   *          if the photo is swapped for a different one, the hint is ignored automatically.
    * ------------------------------------------------------------------ */
   const HINTS = {
-    bruarfoss: { falls: [{ x: .44, w: .40, y0: .30, y1: .97 }] },
-    gullfoss: { falls: [{ x: .585, w: .13, y0: .42, y1: .9 }, { x: .47, w: .18, y0: .38, y1: .5 }] },
-    seljalandsfoss: { falls: [{ x: .49, w: .06, y0: .33, y1: .57 }, { x: .3, w: .022, y0: .05, y1: .36 }] },
-    gljufrabui: { falls: [{ x: .325, w: .05, y0: .14, y1: .48 }] },
-    skogafoss: { falls: [{ x: .745, w: .16, xb: .72, wb: .12, y0: .4, y1: .89 }] },
-    svartifoss: { falls: [{ x: .627, w: .045, y0: .31, y1: .74 }] },
-    dettifoss: { falls: [{ x: .6, w: .72, y0: .28, y1: .82 }] },
-    godafoss: { falls: [{ x: .32, w: .2, y0: .31, y1: .65 }, { x: .8, w: .34, y0: .42, y1: .63 }] },
-    hraunfossar: { falls: [{ x: .44, w: .17, y0: .5, y1: .62 }, { x: .67, w: .2, y0: .5, y1: .6 }, { x: .12, w: .14, y0: .7, y1: .79 }] },
-    gufufoss: { falls: [{ x: .5, w: .1, y0: .23, y1: .5 }], vp: { x: .5, y: .45 }, road: false },
-    geysir: { src: { x: .51, y: .555, h: .5, r: .085 } },
-    'blue-lagoon': { area: { x0: 0, y0: .55, x1: 1, y1: 1 } },
-    'sky-lagoon': { area: { x0: 0, y0: .6, x1: 1, y1: 1 } },
-    hverir: { area: { x0: 0, y0: .5, x1: 1, y1: .82 } },
-    grjotagja: { area: { x0: 0, y0: .62, x1: 1, y1: 1 } },
-    'hotel-aldan': { area: { x0: .4, y0: .5, x1: 1, y1: 1 } },
-    'diamond-beach': { area: { x0: 0, y0: .04, x1: 1, y1: .42 } },
-    hvitserkur: { area: { x0: 0, y0: .5, x1: 1, y1: .8 } },
-    'ytri-tunga': { area: { x0: 0, y0: .34, x1: 1, y1: .6 } },
-    reynisfjara: { area: { x0: .3, y0: .26, x1: 1, y1: .48 } },
-    londrangar: { area: { x0: 0, y0: .3, x1: 1, y1: .44 } },
-    kerid: { area: { x0: .35, y0: .25, x1: .73, y1: .5 } },
-    viti: { area: { x0: .42, y0: .52, x1: .8, y1: .78 } },
-    studlagil: { area: { x0: .3, y0: .3, x1: .6, y1: 1 } },
-    giethoorn: { area: { x0: 0, y0: .62, x1: 1, y1: 1 } },
-    jokulsarlon: { area: { x0: 0, y0: .3, x1: 1, y1: 1 } },
-    fjallsarlon: { area: { x0: 0, y0: .45, x1: 1, y1: 1 } },
-    hallgrimskirkja: { area: { x0: 0, y0: .52, x1: 1, y1: 1 } },
-    akureyri: { area: { x0: 0, y0: .5, x1: 1, y1: 1 } },
-    kolaportid: { area: { x0: 0, y0: .4, x1: 1, y1: .75 } },
-    keflavik: { road: false },
-    'ring-road': { vp: { x: .3, y: .5 } }
+    bruarfoss: { ar: 1.476, fp: '8998344424634784', falls: [{ x: .44, w: .40, y0: .30, y1: .97 }] },
+    gullfoss: { ar: 1.501, fp: '778934977aa55554', falls: [{ x: .585, w: .13, y0: .42, y1: .9 }, { x: .47, w: .18, y0: .38, y1: .5 }] },
+    seljalandsfoss: { ar: 1.608, fp: '2acc776778767777', falls: [{ x: .49, w: .06, y0: .33, y1: .57 }, { x: .3, w: .022, y0: .05, y1: .36 }] },
+    gljufrabui: { ar: 1.508, fp: '9a88566577776776', falls: [{ x: .325, w: .05, y0: .14, y1: .48 }] },
+    skogafoss: { ar: 1.871, fp: 'deda989646754675', falls: [{ x: .745, w: .16, xb: .72, wb: .12, y0: .4, y1: .89 }] },
+    svartifoss: { ar: 1.391, fp: '38cb647377767886', falls: [{ x: .627, w: .045, y0: .31, y1: .74 }] },
+    dettifoss: { ar: 1.5, fp: '9887a9987ba79987', falls: [{ x: .6, w: .72, y0: .28, y1: .82 }] },
+    godafoss: { ar: 1.498, fp: '8ccc39cd17ac3455', falls: [{ x: .32, w: .2, y0: .31, y1: .65 }, { x: .8, w: .34, y0: .42, y1: .63 }] },
+    hraunfossar: { ar: 1.509, fp: 'abde666657868983', falls: [{ x: .44, w: .17, y0: .5, y1: .62 }, { x: .67, w: .2, y0: .5, y1: .6 }, { x: .12, w: .14, y0: .7, y1: .79 }] },
+    gufufoss: { ar: 1.333, fp: 'adec447568757655', falls: [{ x: .5, w: .1, y0: .23, y1: .5 }], vp: { x: .5, y: .45 }, road: false },
+    geysir: { ar: 1.498, fp: 'edcc78aa99987888', src: { x: .51, y: .555, h: .5, r: .085 } },
+    'blue-lagoon': { ar: 1.498, fp: 'cccca966aba9eeed', area: { x0: 0, y0: .55, x1: 1, y1: 1 } },
+    'sky-lagoon': { ar: 1.5, fp: 'ea89a533a86999a9', area: { x0: 0, y0: .6, x1: 1, y1: 1 } },
+    hverir: { ar: 1.5, fp: 'dbaaabba8abc789b', area: { x0: 0, y0: .5, x1: 1, y1: .82 } },
+    grjotagja: { ar: 1.501, fp: '1145248755782359', area: { x0: 0, y0: .62, x1: 1, y1: 1 } },
+    'hotel-aldan': { ar: 2.481, fp: 'ade9377423543334', area: { x0: .4, y0: .5, x1: 1, y1: 1 } },
+    'diamond-beach': { ar: 1.501, fp: '8975555211000000', area: { x0: 0, y0: .04, x1: 1, y1: .42 } },
+    hvitserkur: { ar: 1.498, fp: 'cbddb77c85697766', area: { x0: 0, y0: .5, x1: 1, y1: .8 } },
+    'ytri-tunga': { ar: 1.504, fp: 'ddedbccc668899aa', area: { x0: 0, y0: .34, x1: 1, y1: .6 } },
+    reynisfjara: { ar: 1.833, fp: 'ceee9a9977877765', area: { x0: .3, y0: .26, x1: 1, y1: .48 } },
+    londrangar: { ar: 2.003, fp: 'cccc9aaa99a9aab8', area: { x0: 0, y0: .3, x1: 1, y1: .44 } },
+    kerid: { ar: 1.598, fp: 'dbadb988b9777897', area: { x0: .35, y0: .25, x1: .73, y1: .5 } },
+    viti: { ar: 1.333, fp: 'abb8455544543333', area: { x0: .42, y0: .52, x1: .8, y1: .78 } },
+    studlagil: { ar: 1.461, fp: '8a84546544544454', area: { x0: .3, y0: .3, x1: .6, y1: 1 } },
+    giethoorn: { ar: 2.0, fp: '87666655969964cd', area: { x0: 0, y0: .62, x1: 1, y1: 1 } },
+    jokulsarlon: { ar: 1.5, fp: 'cccceedbba896665', area: { x0: 0, y0: .5, x1: 1, y1: 1 } },
+    fjallsarlon: { ar: 1.498, fp: '99877643aa988998', area: { x0: 0, y0: .45, x1: 1, y1: 1 } },
+    hallgrimskirkja: { ar: 1.498, fp: 'eddcaa9a77776756', area: { x0: 0, y0: .52, x1: 1, y1: 1 } },
+    akureyri: { ar: 2.0, fp: 'cccc8a8777988973', area: { x0: 0, y0: .5, x1: 1, y1: 1 } },
+    kolaportid: { ar: 1.581, fp: '9aaa8a8b65446532', area: { x0: 0, y0: .4, x1: 1, y1: .75 } },
+    keflavik: { ar: 1.786, fp: 'caab9a9a77778568', vp: { x: .42, y: .585 }, lane: -.32 },
   };
 
   /* ------------------------------------------------------------------ *
@@ -387,7 +388,7 @@
       S.pk = 0;
       S.puffs = []; for (let i = 0; i < 34; i++) S.puffs.push({ alive: false });
       S.pi = 0;
-      S.T = 6.4; S.B = 3.0; S.ph = (window.__GYPH != null ? window.__GYPH : rand(0, S.T)); S.acc = 0; S.idle = 0; S.flash = 0;
+      S.T = 6.4; S.B = 3.0; S.ph = rand(0, S.T); S.acc = 0; S.idle = 0; S.flash = 0;
       S.sz = clamp(I.h / 380, .6, 1.8);
       S.wind = I.w * .03;
       S.col = mix(WHITE, I.acc, .1);
@@ -748,10 +749,10 @@
       S.star = sStar(mix(WHITE, I.acc, .3));
       S.cloud = sCloud(mix(WHITE, I.acc, .1), 1);
       S.bands = [];
-      for (let i = 0; i < 6; i++) S.bands.push({ x: rand(-.3, 1.1) * I.w, y: rand(R.y0, R.y1), w: rand(.25, .6) * I.w, h: rand(.012, .035) * I.h, vx: rand(5, 16) * I.sc, a: rand(.06, .12), ph: rand(0, TAU) });
+      for (let i = 0; i < 7; i++) S.bands.push({ x: rand(-.3, 1.1) * I.w, y: rand(R.y0, R.y1), w: rand(.25, .6) * I.w, h: rand(.015, .04) * I.h, vx: rand(5, 16) * I.sc, a: rand(.1, .18), ph: rand(0, TAU) });
       S.gl = [];
-      const n = Math.round(clamp(I.w * R.h / 2400, 12, 50));
-      for (let i = 0; i < n; i++) S.gl.push({ x: rand(0, I.w), y: R.y0 + Math.pow(Math.random(), 1.3) * R.h, vx: rand(2, 8) * I.sc, sp: rand(.8, 2.2), ph: rand(0, TAU), s: rand(4, 10) * I.sc, star: Math.random() < .25 });
+      const n = Math.round(clamp(I.w * R.h / 1500, 16, 70));
+      for (let i = 0; i < n; i++) S.gl.push({ x: rand(0, I.w), y: R.y0 + Math.pow(Math.random(), 1.3) * R.h, vx: rand(2, 8) * I.sc, sp: rand(.8, 2.2), ph: rand(0, TAU), s: rand(4, 10) * I.sc, star: Math.random() < .2 });
       S.fog = [];
       for (let i = 0; i < 3; i++) S.fog.push({ x: rand(0, I.w), y: R.y0 + rand(-.05, .08) * I.h, w: rand(.6, 1) * I.w, vx: rand(3, 8) * I.sc, a: rand(.05, .09) });
     },
@@ -793,8 +794,8 @@
       const S = I.s, cold = mix([190, 235, 255], I.acc, .3);
       S.star = sStar(mix(WHITE, cold, .5)); S.dot = sDot(mix(WHITE, cold, .4)); S.glow = sGlow(cold);
       S.sp = [];
-      const n = Math.round(clamp(I.w * I.h / 6000, 14, 60));
-      for (let i = 0; i < n; i++) S.sp.push({ x: rand(0, I.w), y: rand(0, I.h), sp: rand(.5, 1.6), ph: rand(0, TAU), s: rand(4, 13) * I.sc, big: Math.random() < .2 });
+      const n = Math.round(clamp(I.w * I.h / 4000, 18, 80));
+      for (let i = 0; i < n; i++) S.sp.push({ x: rand(0, I.w), y: rand(0, I.h), sp: rand(.5, 1.6), ph: rand(0, TAU), s: rand(4, 12) * I.sc, big: Math.random() < .18 });
       S.bl = [];
       for (let i = 0; i < 3; i++) S.bl.push({ x: rand(.15, .85) * I.w, y: rand(.1, .7) * I.h, r: rand(.25, .45) * Math.max(I.w, I.h), ph: rand(0, TAU), sp: rand(.15, .3) });
       S.dr = [];
@@ -811,7 +812,7 @@
       const S = I.s, A = I.amp;
       c.globalCompositeOperation = 'lighter';
       for (const b of S.bl) {
-        c.globalAlpha = (.04 + .04 * Math.sin(t * b.sp + b.ph)) * A;
+        c.globalAlpha = (.07 + .05 * Math.sin(t * b.sp + b.ph)) * A;
         const x = b.x + Math.sin(t * b.sp * .7 + b.ph) * b.r * .15, y = b.y + Math.cos(t * b.sp * .6 + b.ph) * b.r * .1;
         c.drawImage(S.glow, x - b.r / 2, y - b.r / 2, b.r, b.r);
       }
@@ -849,7 +850,7 @@
   FXS.snow = {
     res: 1,
     setup(I) {
-      const S = I.s, n = Math.round(clamp(I.w * I.h / 2300, 40, 220));
+      const S = I.s, n = Math.round(clamp(I.w * I.h / 1600, 50, 260));
       S.dot = sDot(mix(WHITE, I.acc, .08));
       S.f = [];
       SNOW_L.forEach((L, li) => {
@@ -991,6 +992,7 @@
   /* ---------- sunset (light leak, lens flare, floating dust) ---------- */
   FXS.sunset = {
     res: .5,
+    blend: 'normal',   // warm light must tint bright skies too (screen would vanish on white)
     setup(I) {
       const S = I.s, sun = I.hint.sun || { x: .84, y: .16 };
       S.sx = clamp(I.X(sun.x), 0, I.w); S.sy = clamp(I.Y(sun.y), 0, I.h);
@@ -1000,7 +1002,7 @@
       S.glow = sGlow([255, 225, 180]);
       S.dot = sDot([255, 236, 210]);
       S.gh = [];
-      [.42, .7, 1.18, 1.45, 1.8].forEach((k, i) => S.gh.push({ k, r: rand(.025, .09) * I.w, c: i % 3, a: rand(.04, .08) }));
+      [.42, .7, 1.18, 1.45, 1.8].forEach((k, i) => S.gh.push({ k, r: rand(.025, .09) * I.w, c: i % 3, a: rand(.07, .13) }));
       S.d = [];
       const n = Math.round(clamp(I.w * I.h / 5200, 14, 50));
       for (let i = 0; i < n; i++) S.d.push({ x: rand(0, I.w), y: rand(0, I.h), vx: rand(-3, 3), vy: rand(-4, 1), s: rand(.8, 2.2) * clamp(I.sc, .8, 1.5), sp: rand(.5, 1.6), ph: rand(0, TAU) });
@@ -1019,14 +1021,14 @@
       const S = I.s, A = I.amp, W = I.w, H = I.h, M = Math.max(W, H);
       const sx = S.sx + Math.sin(t * .11) * W * .025, sy = S.sy + Math.cos(t * .09) * H * .02;
       c.globalCompositeOperation = 'lighter';
-      let s = M * 1.5;
-      c.globalAlpha = (.16 + .08 * Math.sin(t * .42)) * A;
+      let s = M * 1.7;
+      c.globalAlpha = Math.min(1, (.34 + .12 * Math.sin(t * .42)) * A);
       c.drawImage(S.leak, sx - s / 2, sy - s / 2, s, s);
-      s = M * 1.1;
-      c.globalAlpha = (.05 + .04 * Math.sin(t * .31 + 2)) * A;
+      s = M * 1.2;
+      c.globalAlpha = Math.min(1, (.1 + .07 * Math.sin(t * .31 + 2)) * A);
       c.drawImage(S.leak2, W - sx - s / 2, H - sy * .4 - s / 2, s, s);
-      s = M * .22;
-      c.globalAlpha = (.22 + .08 * Math.sin(t * 1.3)) * A;
+      s = M * .3;
+      c.globalAlpha = Math.min(1, (.3 + .1 * Math.sin(t * 1.3)) * A);
       c.drawImage(S.glow, sx - s / 2, sy - s / 2, s, s);
       // ghosts along the sun→centre axis
       const cx = W / 2, cy = H / 2;
@@ -1078,15 +1080,15 @@
     },
     draw(I, c) {
       const S = I.s, A = I.amp, W = I.w, H = I.h;
-      c.strokeStyle = rgba(S.col, 1); c.lineCap = 'round';
+      c.strokeStyle = rgba(S.col, 1); c.lineCap = 'butt';
       // road centre dashes in perspective
       if (S.road) {
-        const lane = -W * .16, bot = H * 1.15 - S.vy;
+        const lane = W * (I.hint.lane == null ? -.16 : I.hint.lane), bot = H * 1.15 - S.vy;
         for (const d of S.D) {
           const s0 = 1 / d, s1 = 1 / (d + 1.6);
-          const a = .22 * smooth(.02, .1, s0) * A;
+          const a = .2 * smooth(.02, .1, s0) * (1 - smooth(.7, 1, s0) * .5) * A;
           if (a < .01) continue;
-          c.globalAlpha = a; c.lineWidth = Math.max(.6, 9 * s0 * I.sc);
+          c.globalAlpha = a; c.lineWidth = Math.max(.5, 4.5 * s0 * I.sc);
           c.beginPath(); c.moveTo(S.vx + lane * s0, S.vy + bot * s0); c.lineTo(S.vx + lane * s1, S.vy + bot * s1); c.stroke();
         }
       }
@@ -1185,13 +1187,13 @@
       }
       // contrail: aged polylines (two engines), batched into 6 age buckets
       if (S.len > 1) {
-        c.strokeStyle = S.trailCol; c.lineCap = 'round'; c.lineJoin = 'round';
-        const LIFE = 7, start = (S.head - S.len + S.N) % S.N;
-        for (let bkt = 0; bkt < 6; bkt++) {
-          const aMin = bkt / 6 * LIFE, aMax = (bkt + 1) / 6 * LIFE, am = (aMin + aMax) / 2;
-          const alpha = .42 * Math.pow(1 - am / LIFE, 1.5) * A;
+        c.strokeStyle = S.trailCol; c.lineCap = 'butt'; c.lineJoin = 'round';
+        const LIFE = 7, NB = 8, start = (S.head - S.len + S.N) % S.N;
+        for (let bkt = 0; bkt < NB; bkt++) {
+          const aMin = bkt / NB * LIFE, aMax = (bkt + 1) / NB * LIFE, am = (aMin + aMax) / 2;
+          const alpha = .4 * Math.pow(1 - am / LIFE, 1.6) * A;
           if (alpha < .01) continue;
-          c.globalAlpha = alpha; c.lineWidth = (.8 + am * .9) * sc;
+          const lw = (.7 + am * .8) * sc;
           for (let e = 0; e < 2; e++) {
             const X = e ? S.tx2 : S.tx1, Y = e ? S.ty2 : S.ty1;
             c.beginPath(); let open = false;
@@ -1200,7 +1202,9 @@
               if (age >= aMin - .05 && age <= aMax + .05) { if (!open) { c.moveTo(X[i], Y[i]); open = true; } else c.lineTo(X[i], Y[i]); }
               else if (open) break;
             }
-            if (open) c.stroke();
+            if (!open) continue;
+            c.globalAlpha = alpha * .3; c.lineWidth = lw * 3.2; c.stroke();
+            c.globalAlpha = alpha; c.lineWidth = lw; c.stroke();
           }
         }
       }
@@ -1399,7 +1403,7 @@
     this.amp = clamp(opts.intensity == null ? 1 : +opts.intensity || 0, 0, 1.6);
     this.img = el.querySelector('img');
     this.id = opts.id || imgId(this.img);
-    this.hint = opts.hint || (this.id && HINTS[this.id]) || {};
+    this.hint = {};
     this.enabled = true; this.visible = !getIO(); this.running = false; this.dead = false; this.dirty = true;
     this.shown = false; this.t = 0; this.s = {}; this.w = 0; this.h = 0;
   }
@@ -1422,8 +1426,51 @@
     return m ? decodeURIComponent(m[1]) : '';
   }
 
+  // 4x4 luminance fingerprint (hex) of a loaded photo; null when unreadable (e.g. file:// taint)
+  const FPC = new Map();
+  function imgFingerprint(img) {
+    const key = img.currentSrc || img.src || '';
+    if (key && FPC.has(key)) return FPC.get(key);
+    let out = null;
+    try {
+      const c = mkCanvas(64, 64), g = c.getContext('2d', { willReadFrequently: true });
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      g.drawImage(img, 0, 0, 64, 64);
+      const d = g.getImageData(0, 0, 64, 64).data;
+      out = '';
+      for (let by = 0; by < 4; by++) {
+        for (let bx = 0; bx < 4; bx++) {
+          let sum = 0;
+          for (let y = by * 16; y < by * 16 + 16; y++) {
+            for (let x = bx * 16; x < bx * 16 + 16; x++) { const i = (y * 64 + x) * 4; sum += .299 * d[i] + .587 * d[i + 1] + .114 * d[i + 2]; }
+          }
+          out += Math.min(15, (sum / 256 / 16) | 0).toString(16);
+        }
+      }
+    } catch (e) { out = null; }
+    if (key) FPC.set(key, out);
+    return out;
+  }
+  // a composition hint only applies to the exact photo it was calibrated on
+  function hintFor(I) {
+    if (I.opts.hint) return I.opts.hint;
+    const h = I.id && HINTS[I.id], img = I.img;
+    if (!h || !img || !img.naturalWidth) return {};
+    if (h.ar && Math.abs(img.naturalWidth / img.naturalHeight - h.ar) > .012) return {};
+    if (h.fp) {
+      const fp = imgFingerprint(img);
+      if (fp && fp.length === h.fp.length) {
+        let sum = 0, mx = 0;
+        for (let i = 0; i < fp.length; i++) { const d = Math.abs(parseInt(fp[i], 16) - parseInt(h.fp[i], 16)); sum += d; if (d > mx) mx = d; }
+        if (sum / fp.length > 1.6 || mx > 5) return {};
+      }
+    }
+    return h;
+  }
+
   function prepare(I) {
     if (!measure(I)) return false;
+    I.hint = hintFor(I);
     I.s = {}; I.t = rand(0, 60);
     I.fx.setup(I);
     if (I.fx.update) {
@@ -1606,6 +1653,7 @@
     version: '1.0.0',
     types: TYPES.slice(),
     hints: HINTS,
+    fingerprint: (img) => (img && img.naturalWidth ? imgFingerprint(img) : null),
     stats: stats,
     mount: mount,
     kenBurns: kenBurns,

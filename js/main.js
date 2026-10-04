@@ -208,11 +208,20 @@
       const accent = x.d.accent || '#7fe3ff';
       const glow = x.lines.map((l) => '<path class="route-line route-line-glow" d="' + linePath(l) + '" stroke="' + esc(accent) + '"/>').join('');
       const main = x.lines.map((l) => '<path class="route-line route-line-main" d="' + linePath(l) + '" stroke="' + esc(accent) + '"/>').join('');
-      const pts = (x.d.spots || []).filter(inBounds).map((s) => {
-        const must = hasTag(s, '必去');
+      const spotsIn = (x.d.spots || []).filter(inBounds);
+      // label only the must-see stops; flip labels left when they would collide or run off the map
+      const side = {};
+      const labeled = spotsIn.filter((s) => hasTag(s, '必去')).sort((a, b) => X(a.lng) - X(b.lng));
+      labeled.forEach((s, k) => {
+        side[s.id] = X(s.lng) > W * 0.8 ? -1 : 1;
+        const nx = labeled[k + 1];
+        if (nx && X(nx.lng) - X(s.lng) < 90 && Math.abs(Y(nx.lat) - Y(s.lat)) < 18) side[s.id] = -1;
+      });
+      const pts = spotsIn.map((s) => {
+        const sd = side[s.id];
         return '<g class="route-pt" transform="translate(' + X(s.lng).toFixed(1) + ' ' + Y(s.lat).toFixed(1) + ')">' +
           '<circle r="4" fill="' + esc(accent) + '" stroke="#000" stroke-width="1.5"/>' +
-          (must ? '<text x="9" y="4">' + esc(s.title) + '</text>' : '') + '</g>';
+          (sd ? '<text x="' + (9 * sd) + '" y="4" data-side="' + sd + '"' + (sd < 0 ? ' text-anchor="end"' : '') + '>' + esc(s.title) + '</text>' : '') + '</g>';
       }).join('');
       return '<g class="route-day" data-i="' + i + '">' + glow + main + pts + '</g>';
     }).join('');
@@ -235,6 +244,7 @@
 
     const svg = $('svg', mapEl);
     RS.svg = svg;
+    RS.cur = -1;
     RS.head = $('.route-head', svg);
     RS.days = rdays.map((x, i) => {
       const g = $('.route-day[data-i="' + i + '"]', svg);
@@ -255,7 +265,7 @@
     // caption
     cap.innerHTML =
       '<p class="eyebrow route__eyebrow"><span class="eyebrow__line"></span>THE ROUTE</p>' +
-      '<h2 class="route__headline">一號公路，<br>順時針繞一圈。</h2>' +
+      '<h2 class="route__headline">一號公路，<br>逆時針繞一圈。</h2>' +
       '<div class="route__card"><div class="route__swap"></div>' +
       '<div class="route__km"><b id="routeKm">0</b><span>km · 地圖路線累計</span></div>' +
       '<div class="route__ticks">' + RS.days.map((D) => '<i style="--c:' + esc(D.accent) + '"><b></b></i>').join('') + '</div></div>';
@@ -271,12 +281,16 @@
 
   function sizeRoute() {
     if (!RS.svg) return;
-    const w = RS.svg.getBoundingClientRect().width || 800;
-    const sw = RS.W / w;
+    const rect = RS.svg.getBoundingClientRect();
+    const sw = Math.max(RS.W / (rect.width || 800), RS.H / (rect.height || 560));
     RS.sw = sw;
     RS.svg.style.setProperty('--sw', sw.toFixed(3));
     $$('.route-pt circle', RS.svg).forEach((c) => c.setAttribute('r', (3.6 * sw).toFixed(2)));
-    $$('.route-pt text', RS.svg).forEach((t) => t.setAttribute('x', (8 * sw).toFixed(1)));
+    $$('.route-pt text', RS.svg).forEach((t) => {
+      const sd = parseFloat(t.getAttribute('data-side')) || 1;
+      t.setAttribute('x', (8 * sw * sd).toFixed(1));
+      t.setAttribute('y', (4.5 * sw).toFixed(1));
+    });
     if (RS.head) {
       const set = (sel, r) => { const c = $(sel, RS.head); if (c) c.setAttribute('r', (r * sw).toFixed(2)); };
       set('.glow', 13); set('.ring', 7); set('.core', 4.2);
@@ -788,7 +802,7 @@
     buildMountains();
     heroFX.stars = safe(() => Starfield($('#heroStars')), 'stars');
     heroFX.snow = safe(() => Snow($('#heroSnow')), 'snow');
-    heroFX.aurora = safe(() => AuroraGL($('#heroAurora')), 'aurora');
+    heroFX.aurora = safe(() => AuroraGL($('#heroAurora'), { amp: 0.9 }), 'aurora');
     if (!heroFX.aurora) { html.classList.add('no-webgl'); const c = $('#heroAurora'); if (c) c.style.display = 'none'; }
 
     // mouse parallax targets
@@ -836,7 +850,7 @@
       const dt = Math.min(0.05, (now - heroFX.last) / 1000);
       heroFX.last = now; heroFX.t += dt;
       mouse.x = lerp(mouse.x, mouse.tx, 0.05); mouse.y = lerp(mouse.y, mouse.ty, 0.05);
-      for (let i = 0; i < heroFX.setters.length; i++) heroFX.setters[i](mouse.x, mouse.y);
+      if (FINE_POINTER) for (let i = 0; i < heroFX.setters.length; i++) heroFX.setters[i](mouse.x, mouse.y);
       if (heroFX.stars) heroFX.stars.draw(heroFX.t, dt);
       if (heroFX.aurora) heroFX.aurora.render(heroFX.t, mouse.x, -mouse.y);
       if (heroFX.snow) heroFX.snow.draw(heroFX.t, dt, mouse.x);
@@ -921,8 +935,17 @@
     const el = typeof target === 'string' ? document.querySelector(target) : target;
     if (!el) return;
     if (lenis) {
-      const dist = Math.abs(el.getBoundingClientRect().top);
-      lenis.scrollTo(el, { duration: clamp(dist / 2600, 1.0, 2.4), immediate: !!immediate });
+      const top = el.getBoundingClientRect().top;
+      const dist = Math.abs(top);
+      const vh = window.innerHeight;
+      if (!immediate && dist > vh * 14) {
+        // very long jumps: cut most of the distance, then glide the last stretch
+        const dir = top > 0 ? 1 : -1;
+        lenis.scrollTo(el, { offset: -dir * vh * 1.6, immediate: true, force: true });
+        requestAnimationFrame(() => lenis.scrollTo(el, { duration: 1.3, force: true }));
+        return;
+      }
+      lenis.scrollTo(el, { duration: clamp(dist / 2600, 1.0, 2.4), immediate: !!immediate, force: true });
     } else el.scrollIntoView({ behavior: REDUCED || immediate ? 'auto' : 'smooth' });
   }
 
@@ -1057,7 +1080,7 @@
     const mm = gsap.matchMedia();
     mm.add({
       all: 'all',
-      desktop: '(min-width: 1024px) and (min-height: 600px)',
+      desktop: '(min-width: 1024px) and (min-height: 760px)',
       reduce: '(prefers-reduced-motion: reduce)'
     }, (ctx) => {
       const c = ctx.conditions;
@@ -1136,7 +1159,7 @@
         if (opener && motion) {
           gsap.fromTo($('.day-opener__media', opener), { yPercent: -9, scale: 1.12 }, { yPercent: 9, scale: 1, ease: 'none', scrollTrigger: { trigger: opener, start: 'top bottom', end: 'bottom top', scrub: true } });
           const parts = $$('.day-opener__kicker, .day-opener__num, .day-opener__title, .day-opener__sub, .day-opener__chips', opener);
-          gsap.from(parts, { opacity: 0, y: 70, duration: 1.5, stagger: 0.09, ease: 'expo.out', scrollTrigger: { trigger: opener, start: 'top 55%', toggleActions: 'play none none reverse' } });
+          gsap.from(parts, { opacity: 0, y: 70, duration: 1.5, stagger: 0.09, ease: 'expo.out', scrollTrigger: { trigger: $('.day-opener__content', opener), start: 'top 88%', toggleActions: 'play none none reverse' } });
           gsap.to($('.day-opener__content', opener), { opacity: 0, y: -90, ease: 'none', scrollTrigger: { trigger: opener, start: 'bottom 75%', end: 'bottom 15%', scrub: true } });
         }
 
@@ -1156,7 +1179,7 @@
           const tween = gsap.to(track, {
             x: () => -dist(), ease: 'none',
             scrollTrigger: {
-              trigger: body, start: 'top top', end: () => '+=' + dist(), pin: true, scrub: 0.8, anticipatePin: 1, invalidateOnRefresh: true,
+              trigger: body, start: 'top top', end: () => '+=' + Math.round(dist() * 0.8), pin: true, scrub: 0.8, anticipatePin: 1, invalidateOnRefresh: true,
               onUpdate: (s) => {
                 if (barFill) barFill.style.transform = 'scaleX(' + s.progress.toFixed(4) + ')';
                 const idx = Math.min(n - 1, Math.floor(s.progress * n));
@@ -1194,21 +1217,31 @@
               { clipPath: 'inset(0% 0% 0% 0% round ' + r + 'px)', ease: 'none', scrollTrigger: { trigger: spot, start: 'top 98%', end: 'top 40%', scrub: true } });
           }
           if (par) gsap.fromTo(par, { yPercent: -6, scale: 1.16 }, { yPercent: 6, scale: 1.02, ease: 'none', scrollTrigger: { trigger: spot, start: 'top bottom', end: 'bottom top', scrub: true } });
-          gsap.from($$('.spot__body > *', spot), { opacity: 0, y: 46, duration: 1.3, stagger: 0.08, ease: 'expo.out', scrollTrigger: { trigger: spot, start: 'top 72%' } });
+          gsap.from($$('.spot__body > *', spot), { opacity: 0, y: 46, duration: 1.3, stagger: 0.08, ease: 'expo.out', scrollTrigger: { trigger: $('.spot__body', spot) || spot, start: 'top 86%' } });
         });
       });
 
       /* ---- worlds ---- */
       if (motion) {
         gsap.from('#worlds .section-head > *', { opacity: 0, y: 40, duration: 1.3, stagger: 0.1, ease: 'expo.out', scrollTrigger: { trigger: '#worlds', start: 'top 70%' } });
-        gsap.from('.world-card', { opacity: 0, y: 90, duration: 1.5, stagger: 0.1, ease: 'expo.out', clearProps: 'transform,opacity', scrollTrigger: { trigger: '#worldsGrid', start: 'top 82%' } });
+        const cards = $$('.world-card');
+        if (cards.length) {
+          // CSS transitions on transform would fight the tween; suspend them during the reveal
+          gsap.from(cards, {
+            opacity: 0, y: 90, duration: 1.5, stagger: 0.1, ease: 'expo.out', clearProps: 'transform,opacity',
+            onStart: () => cards.forEach((el) => { el.style.transition = 'none'; }),
+            onComplete: () => cards.forEach((el) => { el.style.transition = ''; }),
+            scrollTrigger: { trigger: '#worldsGrid', start: 'top 82%' }
+          });
+        }
       }
 
       /* ---- finale ---- */
       if (motion) {
         const ft = gsap.timeline({ scrollTrigger: { trigger: '#finale', start: 'top 55%' }, defaults: { ease: 'expo.out' } });
         ft.from('#finale .eyebrow', { opacity: 0, y: 20, duration: 1.2 })
-          .from('.finale__title', { opacity: 0, scale: 0.9, filter: 'blur(24px)', duration: 2, clearProps: 'filter' }, 0.1)
+          .from('.finale__title', { opacity: 0, scale: 0.9, duration: 2 }, 0.1)
+          .from('.finale__title .grad-text', { filter: 'blur(24px)', duration: 2, clearProps: 'filter' }, 0.1)
           .from('.finale__sub', { opacity: 0, y: 26, duration: 1.4 }, 0.5)
           .from('.finale__actions', { opacity: 0, y: 26, duration: 1.4 }, 0.65);
         gsap.fromTo('.finale__bg img', { scale: 1.2 }, { scale: 1, ease: 'none', scrollTrigger: { trigger: '#finale', start: 'top bottom', end: 'bottom bottom', scrub: true } });
@@ -1284,7 +1317,10 @@
   /* =========================================================
      BOOT
      ========================================================= */
+  let booted = false;
   function boot() {
+    if (booted) return;
+    booted = true;
     window.scrollTo(0, 0);
 
     safe(renderNav, 'nav');
@@ -1293,6 +1329,8 @@
     safe(renderStats, 'stats');
     safe(renderRoute, 'route');
     safe(renderDays, 'days');
+    // 沉浸模組：日與日之間的開車過場
+    safe(() => window.Drive && window.Drive.mountAll({ root: document.getElementById('days') }), 'drive');
     safe(renderWorlds, 'worlds');
     safe(renderFinale, 'finale');
     safe(renderCredits, 'credits');
@@ -1320,6 +1358,7 @@
           const raf = (time) => { lenis.raf(time); requestAnimationFrame(raf); };
           requestAnimationFrame(raf);
         }
+        window.lenis = lenis;
         lenis.stop();
       }, 'lenis');
     }
