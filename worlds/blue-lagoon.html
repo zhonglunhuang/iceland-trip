@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <title>藍湖溫泉 · 3D 虛擬空間</title>
+  <meta name="description" content="黃昏的藍湖溫泉：在黑色熔岩田中央的牛奶藍溫泉裡漫步、敷矽泥面膜、游到池畔吧檯點一杯飲料。">
+  <script type="importmap">
+  {"imports":{
+    "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }}
+  </script>
+  <link rel="stylesheet" href="world.css?v=10041641">
+</head>
+<body>
+<div class="w-loading"><div class="w-loading-inner">
+  <div class="w-kicker">ICELAND · 3D WORLD</div>
+  <h1 class="w-loading-title">藍湖溫泉</h1>
+  <p class="w-loading-sub">Blue Lagoon · Bláa lónið</p>
+  <div class="w-bar"><i></i></div>
+  <p class="w-loading-tip">黃昏的熔岩田中央，一池牛奶藍正冒著白煙</p>
+</div></div>
+<script type="module">
+/*
+ * ── BLUE LAGOON · 藍湖溫泉 ───────────────────────────────────────
+ * Golden-hour geothermal lagoon: milky turquoise pools between black,
+ * moss-dusted lava, a wooden boardwalk to a turf-roofed swim-up bar,
+ * a silica-mud mask station, rising steam everywhere and the plumes
+ * of the Svartsengi power plant in front of the setting sun.
+ *
+ * Layout (top view, metres, −Z = north = "forward" from spawn):
+ *   boardwalk  (1,33.5) → (0.3,8) → (−3.4,−14) → (−4.3,−18.4) → bar deck
+ *   bar hut    (−9.9,−23.75)   mask station (11,2)   lava viewpoint (−30,8)
+ */
+import * as THREE from 'three';
+import { createWorld, helpers } from './engine.js';
+const { noise2D, fbm, ridged, rand, lerp, clamp, smoothstep } = helpers;
+
+/* ═════════════════ 1. layout & ground (single source of truth) ═════════════════ */
+const L = 0;                         // water level
+const DECK = L + 0.3;                // boardwalk deck top
+const BW = 2.4;                      // boardwalk width
+const FOG = 0xe8b29c;                // peach-pink haze = sky horizon
+const SUN_DIR = [-0.48, 0.23, -0.85];// low sun, north-west, ~13° up (front-left of spawn view)
+const BAR = { x: -9.9, z: -23.75 };
+const MASK = { x: 11, z: 2 };
+const LAVA = { x: -30, z: 8 };
+const PLANT = { x: -58, y: 6, z: -84 };
+const SPAWN = { x: 0.59, z: 18.5, yaw: Math.atan2(-0.7, -25.5) };
+const WATER_PATHS = [[0.5, 25, 0.3, 8], [0.3, 8, -3.4, -14], [-3.4, -14, -4.3, -19]];
+const LAND_PATH = [0.8, 27, 3, 62];
+
+const BLOBS = [                       // union of ellipses = the lagoon
+  { x: 0, z: -2, rx: 29, rz: 23 },
+  { x: -22, z: -11, rx: 14, rz: 10 },
+  { x: 20, z: 7, rx: 12, rz: 14 },
+  { x: -7, z: -25, rx: 15, rz: 8.5 },
+  { x: 4, z: 20, rx: 12, rz: 8.5 },
+];
+const ISLANDS = [
+  { x: -13, z: 4, r: 3.4 }, { x: 10, z: -12, r: 3.0 }, { x: -21, z: -6, r: 2.6 },
+  { x: 22, z: -3, r: 2.4 }, { x: 21, z: 14, r: 2.2 },
+];
+
+function segDist(px, pz, ax, az, bx, bz) {
+  const vx = bx - ax, vz = bz - az;
+  const t = clamp(((px - ax) * vx + (pz - az) * vz) / (vx * vx + vz * vz), 0, 1);
+  return Math.hypot(px - ax - vx * t, pz - az - vz * t);
+}
+
+/** > 0 inside the lagoon (≈ depth factor), < 0 on land (≈ distance factor). */
+function lagoonF(x, z) {
+  const wx = x + noise2D(x * 0.05 + 3.1, z * 0.05 - 1.7) * 4.2;
+  const wz = z + noise2D(x * 0.05 - 7.3, z * 0.05 + 5.2) * 4.2;
+  let f = -99;
+  for (const b of BLOBS) { const dx = (wx - b.x) / b.rx, dz = (wz - b.z) / b.rz; f = Math.max(f, 1 - dx * dx - dz * dz); }
+  for (const i of ISLANDS) { const dx = (wx - i.x) / i.r, dz = (wz - i.z) / i.r; f = Math.min(f, (dx * dx + dz * dz - 1) * 0.35); }
+  f = Math.min(f, (Math.hypot(x - LAVA.x, z - LAVA.z) - 6) * 0.05);          // keep the viewpoint dry
+  let d = Math.min(Math.hypot(x - BAR.x, z - BAR.z) - 4.5, Math.hypot(x - MASK.x, z - MASK.z) - 2.5);
+  for (const s of WATER_PATHS) d = Math.min(d, segDist(x, z, s[0], s[1], s[2], s[3]));
+  return Math.max(f, 0.34 * (1 - smoothstep(2.5, 8, d)));                    // keep boardwalk & bar wet
+}
+
+function H(x, z) {
+  const f = lagoonF(x, z);
+  let h;
+  if (f >= 0) h = L - 0.25 - 1.15 * smoothstep(0, 0.35, f);                  // gentle wade-in, then chest deep
+  else {
+    const g = -f;
+    h = L - 0.25 + 1.25 * smoothstep(0, 0.16, g);
+    h += (ridged(x * 0.08 + 11, z * 0.08 - 4, 4) * 1.9 + fbm(x * 0.28, z * 0.28, 3) * 0.35) * smoothstep(0.04, 0.4, g);
+  }
+  const r = Math.hypot(x, z);
+  h += smoothstep(46, 92, r) * (2.5 + 11 * ridged(x * 0.016 + 5, z * 0.016 - 9, 4) + 2.5 * (fbm(x * 0.009, z * 0.009, 3) + 1));
+  const tb = (x - 75) ** 2 + (z + 100) ** 2; h += 30 * Math.exp(-tb / 2450);   // Þorbjörn (σ ≈ 35 m)
+  const dp = segDist(x, z, LAND_PATH[0], LAND_PATH[1], LAND_PATH[2], LAND_PATH[3]);
+  if (dp < 4 && h > DECK - 0.15) h = lerp(DECK - 0.15, h, smoothstep(1.5, 3.8, dp)); // gravel path
+  const dpp = Math.hypot(x - PLANT.x, z - PLANT.z);
+  if (dpp < 26) h = lerp(PLANT.y, h, smoothstep(12, 26, dpp));               // power-plant pad
+  return h;
+}
+
+/* ═════════════════ 2. world ═════════════════ */
+const w = await createWorld({
+  title: '藍湖溫泉',
+  subtitle: 'Blue Lagoon · Bláa lónið',
+  backHref: '../index.html#worlds',
+  timeOfDay: 'dusk',
+  background: FOG,
+  fog: { color: FOG, density: 0.0085 },
+  sky: { top: 0x7581b4, horizon: FOG, bottom: FOG, sunColor: 0xffbe8a, glow: 1.15 },
+  sun: { color: 0xffb27e, intensity: 3.4, dir: SUN_DIR },
+  hemi: { sky: 0xdcc6d2, ground: 0x4d5a63, intensity: 1.45 },
+  exposure: 1.1,
+  spawn: SPAWN,
+  boundsRadius: 60,
+  heightAt: H,
+  water: { level: L, slow: 0.5, maxDepth: 0.85 },
+  bloom: { strength: 0.5, radius: 0.55, threshold: 0.84 },
+  camera: { distance: 8.5, pitch: 0.27, lookUp: 1.0, maxDistance: 20 },
+  hints: ['走下木棧道，泡進牛奶藍溫泉', '游到吧檯點一杯飲料', '去敷個白色矽泥面膜'],
+  info: [
+    { at: { x: MASK.x, z: MASK.z + 1.8 }, radius: 5.2, kicker: '泡湯必做', title: '矽泥面膜 Silica Mud',
+      text: '藍湖招牌的白泥是二氧化矽，從富含礦物質的地熱海水中沉澱而成。抹在臉上敷 10 分鐘再洗掉，皮膚滑嫩到不敢相信。靠近一點，幫小旅人敷一片！' },
+    { at: { x: BAR.x, z: BAR.z + 4.2 }, radius: 5.5, kicker: '游過去點一杯', title: '池畔吧檯 Swim-up Bar',
+      text: '人泡在 38°C 的溫泉裡，直接游到吧檯點飲料。手環感應付款，啤酒、氣泡酒、冰沙都有。記得多喝水，泡溫泉很容易口渴！' },
+    { at: LAVA, radius: 6, kicker: '腳下的大地', title: '熔岩田 Illahraun', img: '../assets/img/blue-lagoon.jpg',
+      text: '藍湖位在 1226 年噴發形成的熔岩田中央，黑色玄武岩上長滿灰綠色苔蘚。溫泉水來自隔壁 Svartsengi 地熱電廠的海水，水溫約 38°C，矽與藻類讓它變成牛奶藍。' },
+  ],
+});
+const { scene } = w;
+const R = rand(2024);
+
+// soft warm fill from behind the camera so faces turned away from the low sun still read
+const fill = new THREE.DirectionalLight(0xffcdb8, 0.55);
+fill.position.set(35, 45, 80); scene.add(fill);
+
+/* ═════════════════ 3. utilities ═════════════════ */
+function canvasTex(cw, ch, draw, repeat = null) {
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  draw(cv.getContext('2d'), cw, ch);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  return t;
+}
+function rr(g, x, y, ww, hh, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.lineTo(x + ww - r, y); g.quadraticCurveTo(x + ww, y, x + ww, y + r);
+  g.lineTo(x + ww, y + hh - r); g.quadraticCurveTo(x + ww, y + hh, x + ww - r, y + hh); g.lineTo(x + r, y + hh);
+  g.quadraticCurveTo(x, y + hh, x, y + hh - r); g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y); g.closePath();
+}
+const FONT_EN = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif';
+const FONT_TC = '-apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+
+/** Dark timber sign with an English kicker + big Traditional Chinese title (Apple-ish signage). */
+function signBoard(kicker, title, sw, sh, accent = '#9fe9ff') {
+  const cw = 1024, ch = Math.round((1024 * sh) / sw);
+  const tex = canvasTex(cw, ch, (g, W, Hh) => {
+    g.fillStyle = '#1d1815'; rr(g, 0, 0, W, Hh, Hh * 0.16); g.fill();
+    g.strokeStyle = 'rgba(255,226,184,0.32)'; g.lineWidth = Math.max(3, Hh * 0.025); rr(g, Hh * 0.06, Hh * 0.06, W - Hh * 0.12, Hh * 0.88, Hh * 0.11); g.stroke();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = accent; g.font = `700 ${Math.round(Hh * 0.19)}px ${FONT_EN}`;
+    g.fillText(kicker.split('').join(String.fromCharCode(8202)), W / 2, Hh * 0.3);
+    g.fillStyle = '#fff0dc'; g.font = `900 ${Math.round(Hh * 0.38)}px ${FONT_TC}`;
+    g.fillText(title, W / 2, Hh * 0.64);
+  });
+  const grp = new THREE.Group();
+  const back = new THREE.Mesh(new THREE.BoxGeometry(sw + 0.08, sh + 0.08, 0.05), new THREE.MeshStandardMaterial({ color: 0x2a211c, roughness: 0.9 }));
+  back.castShadow = true; grp.add(back);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.65, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.55 }));
+  face.position.z = 0.027; grp.add(face);
+  return grp;
+}
+
+/** Lava-rock look: moss on up-facing facets, white silica crust at the waterline + warm rim. */
+function mossify(mat) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uMossA = { value: new THREE.Color(0x5f6e45) };
+    sh.uniforms.uMossB = { value: new THREE.Color(0x8d9461) };
+    sh.uniforms.uSilica = { value: new THREE.Color(0xe2e5de) };
+    sh.uniforms.uLevel = { value: L };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vBW; varying float vBUp;')
+      .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+        { vec4 bw = vec4(transformed, 1.0);
+          vec3 bn = objectNormal;
+          #ifdef USE_INSTANCING
+            bw = instanceMatrix * bw; bn = mat3(instanceMatrix) * bn;
+          #endif
+          vBW = (modelMatrix * bw).xyz; vBUp = normalize(mat3(modelMatrix) * bn).y; }`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vBW; varying float vBUp; uniform vec3 uMossA, uMossB, uSilica; uniform float uLevel;
+        float bH(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+        float bN(vec3 p){ vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(mix(bH(i), bH(i + vec3(1,0,0)), f.x), mix(bH(i + vec3(0,1,0)), bH(i + vec3(1,1,0)), f.x), f.y),
+                     mix(mix(bH(i + vec3(0,0,1)), bH(i + vec3(1,0,1)), f.x), mix(bH(i + vec3(0,1,1)), bH(i + vec3(1,1,1)), f.x), f.y), f.z); }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        { float n = bN(vBW * 1.6) * 0.65 + bN(vBW * 5.1) * 0.35;
+          float m = smoothstep(0.3, 0.72, vBUp + (n - 0.5) * 0.8) * smoothstep(uLevel + 0.3, uLevel + 0.75, vBW.y);
+          diffuseColor.rgb = mix(diffuseColor.rgb, mix(uMossA, uMossB, n), m * 0.9);
+          float s = 1.0 - smoothstep(uLevel + 0.05, uLevel + 0.32 + n * 0.3, vBW.y);
+          diffuseColor.rgb = mix(diffuseColor.rgb, uSilica * (0.82 + 0.18 * n), s * 0.9); }`);
+  };
+  helpers.addRim(mat, 0xffb58c, 0.2, 2.4);
+  mat.customProgramCacheKey = () => 'blue-lagoon-mossrock';
+  return mat;
+}
+
+/** Fade steam billboards that come close to the camera (keeps the view clear + less overdraw). */
+function softenNear(mesh, n0, n1) {
+  const m = mesh.material, src = 'vA = smoothstep(0.0, 0.15, life) * (1.0 - smoothstep(0.4, 1.0, life));';
+  if (m.vertexShader && m.vertexShader.includes(src)) {
+    m.vertexShader = m.vertexShader.replace(src, `${src}\n        vA *= smoothstep(${n0.toFixed(2)}, ${n1.toFixed(2)}, -mvPosition.z);`);
+    m.needsUpdate = true;
+  }
+  return mesh;
+}
+
+/* ═════════════════ 4. terrain (dense core + coarse horizon ring) ═════════════════ */
+const COL = {
+  floor: new THREE.Color(0x9cc9c8), silica: new THREE.Color(0xdcdfd8), lava: new THREE.Color(0x1f1e21), lava2: new THREE.Color(0x36333a),
+  moss: new THREE.Color(0x5f6d45), moss2: new THREE.Color(0x87905d), gravel: new THREE.Color(0x7a736c), hill: new THREE.Color(0x4a4b40),
+};
+function colorAt(x, y, z, ny, out) {
+  if (y < L - 0.12) return out.copy(COL.floor).lerp(COL.silica, smoothstep(L - 0.6, L - 0.12, y));
+  const n = noise2D(x * 0.11 + 4.2, z * 0.11 - 2.7) * 0.5 + 0.5;
+  const n2 = noise2D(x * 0.43 - 1.3, z * 0.43 + 8.1) * 0.5 + 0.5;
+  out.copy(COL.lava).lerp(COL.lava2, n2 * 0.7);
+  const moss = smoothstep(0.6, 0.9, ny) * smoothstep(0.32, 0.62, n * 0.75 + n2 * 0.35) * smoothstep(L + 0.45, L + 0.95, y);
+  out.lerp(n2 > 0.55 ? COL.moss2 : COL.moss, moss * 0.92);
+  out.lerp(COL.hill, smoothstep(70, 120, Math.hypot(x, z)) * 0.5);
+  out.lerp(COL.silica, 1 - smoothstep(L + 0.1, L + 0.55, y));
+  if (y > L + 0.05) out.lerp(COL.gravel, (1 - smoothstep(1.1, 2.3, segDist(x, z, LAND_PATH[0], LAND_PATH[1], LAND_PATH[2], LAND_PATH[3]))) * 0.9);
+  return out;
+}
+const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+function buildTerrain({ half, step, hole = 0, tuck = null }) {
+  const N = Math.round((half * 2) / step), V = N + 1;
+  const pos = new Float32Array(V * V * 3), yRaw = new Float32Array(V * V);
+  for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) {
+    const k = j * V + i, x = -half + i * step, z = -half + j * step, y = H(x, z);
+    yRaw[k] = y; pos[k * 3] = x; pos[k * 3 + 1] = y - (tuck ? tuck(x, z) : 0); pos[k * 3 + 2] = z;
+  }
+  const idx = [], e = 1e-6;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x0 = -half + i * step, z0 = -half + j * step;
+    if (hole && x0 >= -hole - e && x0 + step <= hole + e && z0 >= -hole - e && z0 + step <= hole + e) continue;
+    const a = j * V + i, b = a + 1, c = a + V, d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const nrm = geo.attributes.normal, col = new Float32Array(V * V * 3), c = new THREE.Color();
+  for (let k = 0; k < V * V; k++) {
+    const x = pos[k * 3], z = pos[k * 3 + 2];
+    colorAt(x, yRaw[k], z, nrm.getY(k), c);
+    c.multiplyScalar(1 + noise2D(x * 0.15, z * 0.15) * 0.06);
+    col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mesh = new THREE.Mesh(geo, terrainMat);
+  mesh.receiveShadow = true; mesh.name = 'terrain';
+  return mesh;
+}
+scene.add(buildTerrain({ half: 66, step: 1 }));
+scene.add(buildTerrain({ half: 200, step: 5, hole: 60,                     // tucked under the core where they overlap
+  tuck: (x, z) => { const m = Math.max(Math.abs(x), Math.abs(z)); return m <= 60.01 ? 2.5 : m <= 65.01 ? 0.4 : 0; } }));
+
+/* ═════════════════ 5. the lagoon ═════════════════ */
+const water = helpers.createWater({ width: 86, depth: 80, segments: 84, level: L, color: 0x8fd3da, deepColor: 0x3a93a8,
+  waveAmp: 0.035, waveScale: 2.2, speed: 0.55, opacity: 0.95, roughness: 0.2, glow: 0.42, reflect: 0.5, sparkle: 0.45 });
+water.position.set(-2, L, -2.5);
+scene.add(water);
+
+/* ═════════════════ 6. lava rocks & moss ═════════════════ */
+function nearFeature(x, z, pad = 0) {
+  for (const s of WATER_PATHS) if (segDist(x, z, s[0], s[1], s[2], s[3]) < BW / 2 + 1.6 + pad) return true;
+  if (segDist(x, z, LAND_PATH[0], LAND_PATH[1], LAND_PATH[2], LAND_PATH[3]) < 2.6 + pad) return true;
+  if (Math.hypot(x - BAR.x, z - BAR.z) < 7 + pad) return true;
+  if (Math.hypot(x - MASK.x, z - MASK.z) < 4.6 + pad) return true;
+  return Math.hypot(x - LAVA.x, z - LAVA.z) < 2.8 + pad;
+}
+const boulders = [], spires = [], wetRocks = [], landRocks = [], formation = [];
+for (let i = 0; i < 6500; i++) {
+  const x = (R() - 0.5) * 100 - 2, z = (R() - 0.5) * 100 - 2;
+  if (nearFeature(x, z)) continue;
+  const f = lagoonF(x, z);
+  if (f > -0.07 && f < 0.035) {
+    if (R() < 0.5) (R() < 0.3 ? spires : boulders).push({ x, z, s: R() < 0.3 ? lerp(0.7, 1.7, R()) : lerp(0.9, 2.6, Math.pow(R(), 1.4)) });
+  } else if (f >= 0.12 && R() < 0.01) wetRocks.push({ x, z, s: lerp(0.7, 1.8, R()) });
+  else if (f < -0.12 && Math.hypot(x, z) < 62 && R() < 0.045) landRocks.push({ x, z, s: lerp(0.5, 2.2, Math.pow(R(), 1.8)) });
+}
+ISLANDS.forEach((isl) => {
+  let n = 0;
+  for (let i = 0; i < 80 && n < 7; i++) {
+    const a = R() * Math.PI * 2, d = Math.sqrt(R()) * (isl.r + 4.5);
+    const x = isl.x + Math.cos(a) * d, z = isl.z + Math.sin(a) * d;
+    if (lagoonF(x, z) > 0.04 || nearFeature(x, z)) continue;
+    (n % 3 === 0 ? spires : boulders).push({ x, z, s: lerp(1.1, 2.5, R()) }); n++;
+  }
+});
+for (let i = 0; i < 8; i++) {                                                // jagged formation at the viewpoint
+  const a = (i / 8) * Math.PI * 2 + R() * 0.5, d = 4 + R() * 3.2;
+  formation.push({ x: LAVA.x + Math.cos(a) * d, z: LAVA.z + Math.sin(a) * d, s: lerp(1.4, 2.8, R()) });
+}
+const rockSets = [
+  [boulders, { color: 0x29282b, seed: 11, squash: 0.95, sink: 0.3 }],
+  [spires, { color: 0x252427, seed: 29, squash: 1.55, sink: 0.25 }],
+  [wetRocks, { color: 0x29282b, seed: 5, squash: 0.85, sink: 0.2 }],
+  [landRocks, { color: 0x2d2b2f, seed: 17, squash: 0.55, sink: 0.35 }],
+  [formation, { color: 0x262529, seed: 23, squash: 1.3, sink: 0.25 }],
+];
+for (const [positions, o] of rockSets) {
+  if (!positions.length) continue;
+  const m = helpers.createRocks(Object.assign({ positions, roughness: 0.92 }, o));
+  mossify(m.material);
+  scene.add(m);
+}
+
+// soft moss cushions on the lava field (no colliders, tiny)
+{
+  const pts = [];
+  for (let i = 0; i < 6000 && pts.length < 300; i++) {
+    const x = (R() - 0.5) * 128, z = (R() - 0.5) * 128;
+    if (Math.hypot(x, z) > 64 || lagoonF(x, z) > -0.09 || nearFeature(x, z, -0.8)) continue;
+    pts.push([x, z]);
+  }
+  const mesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }), pts.length);
+  const pal = [0x6c7b4b, 0x7f8a56, 0x5d6b44, 0x8f9663, 0x66704a].map((c) => new THREE.Color(c));
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
+  pts.forEach(([x, z], i) => {
+    const sx = lerp(0.45, 1.2, R()), sy = lerp(0.22, 0.48, R());
+    s.set(sx, sy, sx * lerp(0.7, 1.3, R()));
+    e.set((R() - 0.5) * 0.3, R() * 6.28, (R() - 0.5) * 0.3); q.setFromEuler(e);
+    p.set(x, H(x, z) - sy * 0.35, z);
+    mesh.setMatrixAt(i, m4.compose(p, q, s));
+    mesh.setColorAt(i, c.copy(pal[i % pal.length]).multiplyScalar(0.85 + R() * 0.3));
+  });
+  mesh.receiveShadow = true; mesh.name = 'moss';
+  scene.add(mesh);
+}
+
+/* ═════════════════ 7. boardwalk ═════════════════ */
+const WOOD = [0x9b7653, 0x8c6a4a, 0xa47f5c, 0x80603f, 0x93714f, 0xa8835e].map((c) => new THREE.Color(c));
+const planks = [], beams = [], piles = [], lanterns = [];
+const frameOf = (ax, az, bx, bz) => { const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz); return { cx: (ax + bx) / 2, cz: (az + bz) / 2, len, th: Math.atan2(dx, dz), ux: dx / len, uz: dz / len }; };
+const toW = (F, lx, lz) => { const c = Math.cos(F.th), s = Math.sin(F.th); return [F.cx + lx * c + lz * s, F.cz - lx * s + lz * c]; };
+const sideFor = (F, east) => ((Math.cos(F.th) >= 0) === east ? 1 : -1);    // local +x → world (cos th, −sin th)
+
+function deck(ax, az, bx, bz, width, { top = DECK, lift = 0, ext = 0, collide = true } = {}) {
+  const F0 = frameOf(ax, az, bx, bz);
+  const F = frameOf(ax - F0.ux * ext, az - F0.uz * ext, bx + F0.ux * ext, bz + F0.uz * ext);
+  const n = Math.max(1, Math.round(F.len / 0.31)), pitch = F.len / n;
+  for (let i = 0; i < n; i++) {
+    const [x, z] = toW(F, (R() - 0.5) * 0.05, -F.len / 2 + (i + 0.5) * pitch);
+    planks.push({ x, y: top - 0.045 + lift + (R() - 0.5) * 0.012, z, th: F.th + (R() - 0.5) * 0.025,
+      sx: width + (R() - 0.5) * 0.08, sy: 0.09, sz: pitch - 0.045, c: WOOD[Math.floor(R() * WOOD.length)] });
+  }
+  for (const sd of [-1, 1]) {
+    const lx = sd * (width / 2 - 0.22), [x, z] = toW(F, lx, 0);
+    beams.push({ x, y: top - 0.2, z, th: F.th, sx: 0.16, sy: 0.22, sz: F.len });
+    const m = Math.max(1, Math.round(F.len / 2.4));
+    for (let k = 0; k <= m; k++) {
+      const [px, pz] = toW(F, lx, -F.len / 2 + 0.3 + k * ((F.len - 0.6) / m));
+      const g = H(px, pz);
+      if (g < top - 0.3) piles.push({ x: px, z: pz, y0: g - 0.2, y1: top - 0.12 });
+    }
+  }
+  if (collide) w.addCollider({ x: F.cx, z: F.cz, w: width, d: F.len, rot: F.th, top });
+  return F;
+}
+function steps(F, t, east) {                       // two wooden steps down into the water
+  const sd = sideFor(F, east), lz = (t - 0.5) * F.len;
+  [[0.36, L - 0.08], [1.06, L - 0.48]].forEach(([off, top]) => {
+    const [x, z] = toW(F, sd * (BW / 2 + off), lz);
+    const bot = Math.min(H(x, z), top - 0.3) - 0.1;
+    planks.push({ x, y: (top + bot) / 2, z, th: F.th, sx: 0.68, sy: top - bot, sz: 1.5, c: WOOD[3] });
+    w.addCollider({ x, z, w: 0.7, d: 1.5, rot: F.th, top });
+  });
+}
+function lantern(F, t, east, light = false) {
+  const [x, z] = toW(F, sideFor(F, east) * (BW / 2 + 0.14), (t - 0.5) * F.len);
+  lanterns.push({ x, z, light });
+  w.addCollider({ x, z, r: 0.14 });
+}
+
+const F1 = deck(1.0, 33.5, 0.3, 8, BW, { ext: 0.6 });
+const F2 = deck(0.3, 8, -3.4, -14, BW, { ext: 0.6, lift: 0.004 });
+const F3 = deck(-3.4, -14, -4.3, -18.4, BW, { ext: 0.5 });
+deck(-4.3, -18.2, -4.3, -22.3, 3.4, { lift: 0.004 });                       // landing
+deck(-8.1, -25.6, -8.1, -22.3, 10.6);                                       // bar deck
+steps(F1, 0.42, true); steps(F2, 0.55, false); steps(F3, 0.5, false);
+lantern(F1, 0.18, true); lantern(F1, 0.62, false, true); lantern(F2, 0.3, true); lantern(F2, 0.78, false); lantern(F3, 0.35, true);
+
+/* ═════════════════ 8. silica-mud station ═════════════════ */
+const buckets = [];
+{
+  const TOP = L + 0.2, g = new THREE.Group(); g.position.set(MASK.x, 0, MASK.z); scene.add(g);
+  deck(MASK.x, MASK.z - 1.1, MASK.x, MASK.z + 1.1, 3.4, { top: TOP });
+  [[0.42, L - 0.05], [1.12, L - 0.42]].forEach(([off, top]) => {           // steps up from the water (south)
+    const x = MASK.x, z = MASK.z + 1.1 + off, bot = Math.min(H(x, z), top - 0.3) - 0.1;
+    planks.push({ x, y: (top + bot) / 2, z, th: 0, sx: 1.8, sy: top - bot, sz: 0.68, c: WOOD[2] });
+    w.addCollider({ x, z, w: 1.8, d: 0.7, rot: 0, top });
+  });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8a6747, roughness: 0.85 });
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.78, 0.62), wood);
+  counter.position.set(0, TOP + 0.39, -0.62); counter.castShadow = counter.receiveShadow = true; g.add(counter);
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.07, 0.78), new THREE.MeshStandardMaterial({ color: 0xd9d4c8, roughness: 0.6 }));
+  slab.position.set(0, TOP + 0.815, -0.62); slab.castShadow = true; g.add(slab);
+  w.addCollider({ x: MASK.x, z: MASK.z - 0.62, w: 3.0, d: 0.8, rot: 0 });
+  for (let i = 0; i < 5; i++) buckets.push({ x: MASK.x - 1.12 + i * 0.56, y: TOP + 0.85, z: MASK.z - 0.62 + (R() - 0.5) * 0.12, s: 1 });
+  [[-1.25, 0.45], [-0.72, 0.62], [1.3, 0.5]].forEach(([dx, dz]) => buckets.push({ x: MASK.x + dx, y: TOP, z: MASK.z + dz, s: 1.12 }));
+  const sign = signBoard('SILICA MASK', '矽泥面膜', 2.0, 0.66, '#9fe9ff');
+  sign.position.set(0, TOP + 1.85, -1.02); g.add(sign);
+  [-0.95, 0.95].forEach((x) => {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 2.3, 0.09), wood);
+    post.position.set(x, TOP + 1.15, -1.06); post.castShadow = true; g.add(post);
+  });
+  const lampY = TOP + 2.42;
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd29a).multiplyScalar(5) }));
+  bulb.position.set(0.95, lampY, -1.06); g.add(bulb);
+  const glow = helpers.createGlow({ color: 0xffbf7a, size: 1.5, opacity: 0.75 }); glow.position.copy(bulb.position); g.add(glow);
+  const pl = new THREE.PointLight(0xffc28a, 5, 8, 2); pl.position.set(0.95, lampY - 0.1, -0.7); g.add(pl);
+}
+{ // buckets: white plastic + mounded white mud + handle
+  const n = buckets.length;
+  const bGeo = new THREE.CylinderGeometry(0.2, 0.16, 0.36, 18).translate(0, 0.18, 0);
+  const mGeo = new THREE.SphereGeometry(0.19, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.5, 1).translate(0, 0.34, 0);
+  const hGeo = new THREE.TorusGeometry(0.2, 0.012, 6, 18, Math.PI).translate(0, 0.36, 0);
+  const sGeo = new THREE.BoxGeometry(0.05, 0.36, 0.015).rotateZ(0.35).translate(0.06, 0.48, 0);
+  const meshes = [
+    new THREE.InstancedMesh(bGeo, new THREE.MeshStandardMaterial({ color: 0xf3f4f1, roughness: 0.45 }), n),
+    new THREE.InstancedMesh(mGeo, new THREE.MeshStandardMaterial({ color: 0xeceee6, roughness: 1 }), n),
+    new THREE.InstancedMesh(hGeo, new THREE.MeshStandardMaterial({ color: 0xbfc3c6, roughness: 0.4, metalness: 0.6 }), n),
+    new THREE.InstancedMesh(sGeo, new THREE.MeshStandardMaterial({ color: 0xc89a6a, roughness: 0.8 }), n),
+  ];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  buckets.forEach((b, i) => {
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), R() * 6.28); s.setScalar(b.s); p.set(b.x, b.y, b.z);
+    m4.compose(p, q, s); meshes.forEach((m) => m.setMatrixAt(i, m4));
+  });
+  meshes.forEach((m) => { m.castShadow = true; m.receiveShadow = true; scene.add(m); });
+}
+
+/* ═════════════════ 9. swim-up bar with a turf roof ═════════════════ */
+let hutLight = null;
+{
+  const g = new THREE.Group(); g.position.set(BAR.x, DECK, BAR.z); scene.add(g);
+  const W = 5.4, D = 2.9, WH = 2.6, winB = 0.45, winT = 1.75, winW = 4.3;
+  const boardTex = canvasTex(256, 256, (c, cw, ch) => {
+    const r = rand(9);
+    for (let x = 0; x < cw; x += 32) {
+      const v = Math.round(36 + r() * 16);
+      c.fillStyle = `rgb(${v + 7},${v},${v - 4})`; c.fillRect(x, 0, 32, ch);
+      c.globalAlpha = 0.22; c.strokeStyle = '#000'; c.lineWidth = 1;
+      for (let k = 0; k < 5; k++) { const gx = x + 4 + r() * 24; c.beginPath(); c.moveTo(gx, 0); c.bezierCurveTo(gx + 3, ch * 0.3, gx - 3, ch * 0.7, gx + 1, ch); c.stroke(); }
+      c.globalAlpha = 1; c.fillStyle = '#110e0c'; c.fillRect(x, 0, 2, ch);
+    }
+  }, [3, 1]);
+  const wallMat = new THREE.MeshStandardMaterial({ map: boardTex, roughness: 0.88 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0xefe9dd, roughness: 0.6 });
+  const counterMat = new THREE.MeshStandardMaterial({ color: 0xb48c63, roughness: 0.45 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x2b2421, roughness: 0.85 });
+  const B = (bw, bh, bd) => new THREE.BoxGeometry(bw, bh, bd);
+  const add = (geo, mat, x, y, z, cast = true) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = cast; m.receiveShadow = true; g.add(m); return m; };
+
+  add(B(W, WH, 0.14), wallMat, 0, WH / 2, -D / 2 + 0.07);
+  add(B(0.14, WH, D), wallMat, -W / 2 + 0.07, WH / 2, 0);
+  add(B(0.14, WH, D), wallMat, W / 2 - 0.07, WH / 2, 0);
+  add(B(W, winB, 0.14), wallMat, 0, winB / 2, D / 2 - 0.07);
+  add(B(W, WH - winT, 0.14), wallMat, 0, (WH + winT) / 2, D / 2 - 0.07);
+  const pw = (W - winW) / 2;
+  [-1, 1].forEach((s) => add(B(pw, winT - winB, 0.14), wallMat, s * (W / 2 - pw / 2), (winB + winT) / 2, D / 2 - 0.07));
+  add(B(W, 0.06, D), roofMat, 0, WH + 0.03, 0, false);                       // ceiling
+  // white trims (window + corners)
+  add(B(winW + 0.16, 0.07, 0.18), trimMat, 0, winT + 0.035, D / 2 - 0.05);
+  [-1, 1].forEach((s) => add(B(0.07, winT - winB, 0.18), trimMat, s * (winW / 2 + 0.035), (winB + winT) / 2, D / 2 - 0.05));
+  [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([sx, sz]) => add(B(0.1, WH, 0.1), trimMat, sx * (W / 2 - 0.02), WH / 2, sz * (D / 2 - 0.02)));
+  // counter (protrudes over the water) + brackets
+  add(B(winW + 0.5, 0.08, 0.95), counterMat, 0, winB + 0.04, D / 2 + 0.3);
+  [-1.6, 0, 1.6].forEach((x) => { const b = add(B(0.07, 0.36, 0.5), roofMat, x, winB - 0.2, D / 2 + 0.25); b.rotation.x = 0.55; });
+  // glowing interior: shelves, bottles, neon "SKÁL!"
+  const interior = canvasTex(512, 256, (c, cw, ch) => {
+    const grd = c.createLinearGradient(0, 0, 0, ch);
+    grd.addColorStop(0, '#ffd8a0'); grd.addColorStop(0.55, '#ffb168'); grd.addColorStop(1, '#c4602a');
+    c.fillStyle = grd; c.fillRect(0, 0, cw, ch);
+    const rg = c.createRadialGradient(cw / 2, ch * 0.35, 10, cw / 2, ch * 0.45, cw * 0.62);
+    rg.addColorStop(0, 'rgba(255,244,220,0.5)'); rg.addColorStop(1, 'rgba(80,26,8,0.42)');
+    c.fillStyle = rg; c.fillRect(0, 0, cw, ch);
+    c.save(); c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = `800 44px ${FONT_EN}`;
+    c.shadowColor = '#7fe3ff'; c.shadowBlur = 16; c.fillStyle = '#effdff'; c.fillText('SKÁL!', cw / 2, 46); c.restore();
+    const r = rand(4), cols = ['#2f6b43', '#7a3f12', '#cfe6e2', '#2a5f8f', '#a33a2a', '#d8b04a', '#1f3d2c', '#6fd3da'];
+    [122, 200].forEach((sy) => {
+      let x = 34;
+      while (x < cw - 46) {
+        const bw = 12 + r() * 9, bh = 34 + r() * 28;
+        c.fillStyle = cols[Math.floor(r() * cols.length)]; c.globalAlpha = 0.93;
+        c.fillRect(x, sy - bh * 0.72, bw, bh * 0.72); c.fillRect(x + bw * 0.32, sy - bh, bw * 0.36, bh * 0.3);
+        c.globalAlpha = 0.4; c.fillStyle = '#fff'; c.fillRect(x + 2, sy - bh * 0.66, 2, bh * 0.5);
+        c.globalAlpha = 1; x += bw + 5 + r() * 9;
+      }
+      c.fillStyle = '#4a2a18'; c.fillRect(22, sy, cw - 44, 9);
+      c.fillStyle = 'rgba(0,0,0,0.28)'; c.fillRect(22, sy + 9, cw - 44, 7);
+    });
+  });
+  const inner = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.32, WH - 0.12), new THREE.MeshBasicMaterial({ map: interior, color: new THREE.Color(1.35, 1.35, 1.35) }));
+  inner.position.set(0, WH / 2, -D / 2 + 0.15); g.add(inner);
+  hutLight = new THREE.PointLight(0xffa95c, 18, 12, 2); hutLight.position.set(0, 1.6, 0.3); g.add(hutLight);
+  // east door, ajar, spilling light onto the deck
+  const doorGlow = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 1.9), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffb46e).multiplyScalar(1.15) }));
+  doorGlow.position.set(W / 2 + 0.005, 0.95, -0.35); doorGlow.rotation.y = Math.PI / 2; g.add(doorGlow);
+  const leaf = add(B(0.85, 1.9, 0.05), wallMat, W / 2 + 0.03 + Math.cos(0.27) * 0.425, 0.95, 0.075 - Math.sin(0.27) * 0.425);
+  leaf.rotation.y = 0.27;
+  w.addCollider({ x: BAR.x + leaf.position.x, z: BAR.z + leaf.position.z, r: 0.38 });
+  // gable roof with Icelandic turf
+  const slope = Math.atan2(1.0, 2.05), slabLen = Math.hypot(2.05, 1.0) + 0.12;
+  const turfGeo = new THREE.BoxGeometry(W + 0.55, 0.2, slabLen - 0.06, 16, 1, 6);
+  { const p = turfGeo.attributes.position, col = new Float32Array(p.count * 3), c = new THREE.Color(), base = [0x6f8b45, 0x86a052, 0x5d7a3c, 0x7a8f4a];
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      if (y > 0) p.setY(i, y + noise2D(x * 2.1, z * 2.7) * 0.05 + 0.02);
+      c.set(base[Math.floor((noise2D(x * 1.3 + 7, z * 1.9) * 0.5 + 0.5) * 3.99)]).multiplyScalar(y > 0 ? 1 : 0.7);
+      col.set([c.r, c.g, c.b], i * 3);
+    }
+    turfGeo.setAttribute('color', new THREE.BufferAttribute(col, 3)); turfGeo.computeVertexNormals(); }
+  const turfMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
+  [-1, 1].forEach((s) => {
+    const slab = add(B(W + 0.7, 0.14, slabLen), roofMat, 0, 3.0, s * 1.025);
+    slab.rotation.x = s * slope;
+    const turf = new THREE.Mesh(turfGeo, turfMat); turf.position.y = 0.17; turf.castShadow = true; turf.receiveShadow = true; slab.add(turf);
+  });
+  const ridge = add(new THREE.CylinderGeometry(0.17, 0.17, W + 0.6, 10).rotateZ(Math.PI / 2), turfMat, 0, 3.66, 0);
+  ridge.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ridge.geometry.attributes.position.count * 3).fill(0.16), 3));
+  const gShape = new THREE.Shape();
+  gShape.moveTo(-D / 2, 0); gShape.lineTo(D / 2, 0); gShape.lineTo(D / 2, 0.14); gShape.lineTo(0, 0.86); gShape.lineTo(-D / 2, 0.14); gShape.closePath();
+  const gGeo = new THREE.ShapeGeometry(gShape);
+  const gMat = new THREE.MeshStandardMaterial({ map: boardTex, roughness: 0.88, side: THREE.DoubleSide });
+  [-1, 1].forEach((s) => { const m = add(gGeo, gMat, s * (W / 2 - 0.02), WH, 0); m.rotation.y = s * Math.PI / 2; });
+  // sign
+  const sign = signBoard('SWIM-UP BAR', '池畔吧檯', 3.0, 0.6, '#9fe9ff'); sign.position.set(0, 2.17, D / 2 + 0.03); g.add(sign);
+  // drinks on the counter
+  const cy = winB + 0.08;
+  const drink = (geo, color, x, z, emissive = 0x000000) => add(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.25, emissive, emissiveIntensity: 0.5 }), x, 0, z, false);
+  drink(new THREE.CylinderGeometry(0.055, 0.048, 0.17, 14).translate(0, cy + 0.085, 0), 0xd98a1c, -1.45, D / 2 + 0.45, 0x5a2c00);
+  drink(new THREE.CylinderGeometry(0.057, 0.057, 0.035, 14).translate(0, cy + 0.185, 0), 0xfffaf0, -1.45, D / 2 + 0.45);
+  drink(new THREE.CylinderGeometry(0.06, 0.045, 0.18, 14).translate(0, cy + 0.09, 0), 0x8ccf4d, -0.35, D / 2 + 0.5, 0x1d3a08);
+  drink(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 6).rotateZ(0.25).translate(0.02, cy + 0.2, 0), 0xff5a6a, -0.35, D / 2 + 0.5);
+  drink(new THREE.CylinderGeometry(0.085, 0.008, 0.1, 16).translate(0, cy + 0.15, 0), 0x37c3e6, 0.55, D / 2 + 0.42, 0x06506a);
+  drink(new THREE.CylinderGeometry(0.008, 0.012, 0.1, 6).translate(0, cy + 0.05, 0), 0xdfe8ea, 0.55, D / 2 + 0.42);
+  drink(new THREE.CylinderGeometry(0.03, 0.024, 0.16, 12).translate(0, cy + 0.14, 0), 0xf3d27a, 1.35, D / 2 + 0.5, 0x4a3500);
+  drink(new THREE.CylinderGeometry(0.006, 0.01, 0.07, 6).translate(0, cy + 0.035, 0), 0xdfe8ea, 1.35, D / 2 + 0.5);
+  // string lights under the front eave
+  const pts = [], bulbsPos = [];
+  for (let i = 0; i <= 40; i++) {
+    const u = i / 40, x = -W / 2 - 0.25 + u * (W + 0.5), half = u < 0.5 ? u * 2 : (u - 0.5) * 2;
+    pts.push(new THREE.Vector3(x, 2.36 - Math.sin(half * Math.PI) * 0.16, D / 2 + 0.62));
+  }
+  add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 80, 0.008, 4), roofMat, 0, 0, 0, false);
+  for (let i = 1; i < 40; i += 3) bulbsPos.push(pts[i].clone().add(new THREE.Vector3(0, -0.05, 0)));
+  const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.045, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd08a).multiplyScalar(5) }), bulbsPos.length);
+  const m4 = new THREE.Matrix4();
+  bulbsPos.forEach((p, i) => {
+    bulbs.setMatrixAt(i, m4.makeTranslation(p.x, p.y, p.z));
+    if (i % 2 === 0) { const gl = helpers.createGlow({ color: 0xffb870, size: 0.75, opacity: 0.6 }); gl.position.copy(p); g.add(gl); }
+  });
+  g.add(bulbs);
+  // a big soft halo in front of the window
+  const halo = helpers.createGlow({ color: 0xff9f55, size: 5.5, opacity: 0.32 }); halo.position.set(0, 1.2, D / 2 + 0.6); g.add(halo);
+  // colliders: hut (wall) + counter (wall)
+  w.addCollider({ x: BAR.x, z: BAR.z, w: W + 0.1, d: D + 0.1, rot: 0 });
+  w.addCollider({ x: BAR.x, z: BAR.z + D / 2 + 0.3, w: winW + 0.5, d: 0.95, rot: 0 });
+}
+
+/* ═════════════════ 10. instanced boardwalk meshes + lanterns ═════════════════ */
+{
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x3e3129, roughness: 0.9 });
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
+  const pm = new THREE.InstancedMesh(box, woodMat, planks.length);
+  planks.forEach((k, i) => { q.setFromAxisAngle(Y, k.th); pm.setMatrixAt(i, m4.compose(p.set(k.x, k.y, k.z), q, s.set(k.sx, k.sy, k.sz))); pm.setColorAt(i, k.c); });
+  const bm = new THREE.InstancedMesh(box, darkMat, beams.length);
+  beams.forEach((k, i) => { q.setFromAxisAngle(Y, k.th); bm.setMatrixAt(i, m4.compose(p.set(k.x, k.y, k.z), q, s.set(k.sx, k.sy, k.sz))); });
+  const pileGeo = new THREE.CylinderGeometry(0.09, 0.11, 1, 7).translate(0, 0.5, 0);
+  const im = new THREE.InstancedMesh(pileGeo, darkMat, piles.length);
+  q.identity();
+  piles.forEach((k, i) => im.setMatrixAt(i, m4.compose(p.set(k.x, k.y0, k.z), q, s.set(1, k.y1 - k.y0, 1))));
+  [pm, bm, im].forEach((m) => { m.castShadow = true; m.receiveShadow = true; scene.add(m); });
+
+  // lanterns: post + glowing glass + little roof
+  const n = lanterns.length;
+  const post = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 1, 0.1).translate(0, 0.5, 0), darkMat, n);
+  const glass = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 0.22, 0.16), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffcf8f).multiplyScalar(3.2) }), n);
+  const cap = new THREE.InstancedMesh(new THREE.ConeGeometry(0.17, 0.14, 4).rotateY(Math.PI / 4), new THREE.MeshStandardMaterial({ color: 0x1d1a18, roughness: 0.6, metalness: 0.4 }), n);
+  const plate = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.04, 0.2), cap.material, n);
+  lanterns.forEach((l, i) => {
+    const g0 = H(l.x, l.z) - 0.2, top = DECK + 1.32;
+    post.setMatrixAt(i, m4.compose(p.set(l.x, g0, l.z), q.identity(), s.set(1, top - g0, 1)));
+    glass.setMatrixAt(i, m4.makeTranslation(l.x, top + 0.13, l.z));
+    plate.setMatrixAt(i, m4.makeTranslation(l.x, top + 0.0, l.z));
+    cap.setMatrixAt(i, m4.makeTranslation(l.x, top + 0.31, l.z));
+    const gl = helpers.createGlow({ color: 0xffbf7a, size: 1.6, opacity: 0.7 }); gl.position.set(l.x, top + 0.13, l.z); scene.add(gl);
+    if (l.light) { const pl = new THREE.PointLight(0xffc48a, 6, 10, 2); pl.position.set(l.x, top + 0.1, l.z); scene.add(pl); }
+  });
+  [post, cap, plate].forEach((m) => { m.castShadow = true; scene.add(m); });
+  scene.add(glass);
+}
+
+/* ═════════════════ 11. lava-field viewpoint sign ═════════════════ */
+{
+  const y = H(LAVA.x + 1.6, LAVA.z + 1.2);
+  const sign = signBoard('ILLAHRAUN · 1226', '熔岩田', 1.6, 0.56, '#c9b8ff');
+  sign.position.set(LAVA.x + 1.6, y + 1.25, LAVA.z + 1.2); sign.rotation.y = 0.75; scene.add(sign);
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.1, 0.09), new THREE.MeshStandardMaterial({ color: 0x3e3129, roughness: 0.9 }));
+  post.position.set(LAVA.x + 1.6, y + 0.45, LAVA.z + 1.2); post.castShadow = true; scene.add(post);
+  w.addCollider({ x: LAVA.x + 1.6, z: LAVA.z + 1.2, r: 0.2 });
+}
+
+/* ═════════════════ 12. Svartsengi power plant on the horizon ═════════════════ */
+const plumeSrc = [];
+{
+  const g = new THREE.Group(); g.position.set(PLANT.x, PLANT.y, PLANT.z); scene.add(g);
+  const mat = new THREE.MeshStandardMaterial({ color: 0xc9ccd2, roughness: 0.75 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x5b5f66, roughness: 0.8 });
+  [[0, 0, 18, 6, 9, mat], [13, 2, 8, 9, 8, mat], [-12, 5, 10, 4, 6, mat], [4, -9, 26, 2.2, 3, dark]].forEach(([x, z, sx, sy, sz, m]) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, sy / 2 - 0.5, z); g.add(b);
+  });
+  [[-4, -2], [1, -2], [16, 3]].forEach(([x, z]) => {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.1, 16, 12), mat); c.position.set(x, 7.5, z); g.add(c);
+    plumeSrc.push({ x: PLANT.x + x, z: PLANT.z + z, r: 1.2, y: PLANT.y + 15.5 });
+  });
+}
+
+/* ═════════════════ 13. steam ═════════════════ */
+const steamSrc = [];
+for (let i = 0; i < 4000 && steamSrc.length < 46; i++) {
+  const x = (R() - 0.5) * 80 - 2, z = (R() - 0.5) * 74 - 2;
+  if (lagoonF(x, z) < 0.1 || nearFeature(x, z, 3.2)) continue;                // keep the boardwalk view clear
+  steamSrc.push({ x, z, r: 2.5 + R() * 3.5, y: L });
+}
+const hotSpots = [[-17, -14], [16, -8], [24, 9], [-26, -12], [5, -24], [-6, 10]]
+  .map(([x, z]) => ({ x, z, r: 2.2, y: L }));
+const fumaroles = [[-36, 18], [27, 29], [35, -17], [-39, -23], [-20, 36]]
+  .map(([x, z]) => ({ x, z, r: 0.8, y: H(x, z) }));
+scene.add(softenNear(helpers.createSteam({ sources: steamSrc, count: 280, height: 7, size: 4.6, opacity: 0.12, speed: 0.7, spread: 2.2, wind: [0.32, -0.14], color: 0xfff3ec, seed: 3 }), 2.5, 9));
+scene.add(softenNear(helpers.createSteam({ sources: steamSrc, count: 130, height: 1.8, size: 7.5, opacity: 0.07, speed: 0.35, spread: 3.2, wind: [0.25, -0.1], color: 0xfff6f0, seed: 8 }), 3, 11));
+scene.add(softenNear(helpers.createSteam({ sources: hotSpots, count: 80, height: 15, size: 6.5, opacity: 0.085, speed: 0.5, spread: 3, wind: [0.6, -0.2], color: 0xfff1e8, seed: 13 }), 3, 10));
+scene.add(softenNear(helpers.createSteam({ sources: fumaroles, count: 45, height: 5, size: 2.6, opacity: 0.14, speed: 0.9, spread: 1.2, wind: [0.4, -0.1], color: 0xfffaf5, seed: 19 }), 2, 6));
+scene.add(helpers.createSteam({ sources: plumeSrc, count: 70, height: 46, size: 15, opacity: 0.3, speed: 0.45, spread: 6, wind: [0.5, 0.15], color: 0xfff1e4, seed: 41 }));
+// personal steam: drifts around the traveler only while wading
+const mySteam = softenNear(helpers.createSteam({ radius: 3.4, center: { x: 0, z: 0 }, count: 46, y: L, height: 3.4, size: 2.3, opacity: 0, speed: 1.2, spread: 0.9, wind: [0.12, -0.05], seed: 77 }), 1.2, 3.5);
+const mySteamU = mySteam.material.uniforms.uOpacity;
+mySteam.visible = false; mySteam.position.set(SPAWN.x, 0, SPAWN.z);
+scene.add(mySteam);
+
+/* ═════════════════ 14. pastel cloud deck + birds ═════════════════ */
+const cloudU = {
+  uTime: { value: 0 }, uSun: { value: new THREE.Vector3(...SUN_DIR).normalize() },
+  uLit: { value: new THREE.Color(0xffc3a2) }, uShade: { value: new THREE.Color(0xa597c2) }, uHorizon: { value: new THREE.Color(FOG) },
+};
+const clouds = new THREE.Mesh(new THREE.SphereGeometry(1800, 48, 20, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.ShaderMaterial({
+  uniforms: cloudU,
+  vertexShader: /* glsl */`varying vec3 vDir;
+    void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`uniform float uTime; uniform vec3 uSun, uLit, uShade, uHorizon; varying vec3 vDir;
+    float ch(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float cn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(ch(i), ch(i + vec2(1.0, 0.0)), f.x), mix(ch(i + vec2(0.0, 1.0)), ch(i + vec2(1.0, 1.0)), f.x), f.y); }
+    float cf(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * cn(p); p = p * 2.03 + vec2(17.1, 9.3); a *= 0.5; } return s; }
+    void main(){
+      vec3 d = normalize(vDir);
+      if (d.y < 0.004) discard;
+      vec2 uv = d.xz / (d.y + 0.12) * vec2(0.55, 1.5) + vec2(uTime * 0.006, uTime * 0.002);
+      float n = cf(uv * 1.2);
+      float c = smoothstep(0.5, 0.78, n);
+      float band = smoothstep(0.02, 0.12, d.y) * (1.0 - smoothstep(0.32, 0.7, d.y));
+      float a = c * band * 0.82;
+      if (a < 0.003) discard;
+      float s = max(dot(d, normalize(uSun)), 0.0);
+      vec3 col = mix(uShade, uLit, 0.3 + 0.7 * pow(s, 3.0));
+      col += uLit * pow(s, 14.0) * 1.4 * (1.0 - c * 0.6);
+      col = mix(uHorizon, col, smoothstep(0.0, 0.16, d.y));
+      gl_FragColor = vec4(col, a);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  side: THREE.BackSide, transparent: true, depthWrite: false, fog: false,
+}));
+clouds.frustumCulled = false; clouds.renderOrder = -990; clouds.name = 'clouds';
+scene.add(clouds);
+
+const birds = [];
+{
+  const wing = new THREE.BufferGeometry();
+  wing.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.13, 0, 0, -0.1, 0.95, 0.04, -0.2], 3));
+  wing.computeVertexNormals();
+  const mat = new THREE.MeshBasicMaterial({ color: 0x2b2733, side: THREE.DoubleSide });
+  for (let i = 0; i < 7; i++) {
+    const b = new THREE.Group(), l = new THREE.Mesh(wing, mat), r = new THREE.Mesh(wing, mat);
+    r.scale.x = -1; b.add(l, r); b.scale.setScalar(0.9 + R() * 0.5); scene.add(b);
+    birds.push({ b, l, r, a: R() * Math.PI * 2, rad: 18 + R() * 14, h: 22 + R() * 8, sp: (0.1 + R() * 0.06) * (i % 3 ? 1 : -1), ph: R() * 10 });
+  }
+}
+
+/* ═════════════════ 15. little interactions ═════════════════ */
+// find the traveler's head and right hand (engine rig: player → rig → head / arm groups)
+const rig = w.player.children.find((c) => c.isGroup);
+const head = rig && rig.children.find((c) => c.isGroup && Math.abs(c.position.y - 1.0) < 0.01 && c.children.length > 4);
+const hand = rig && rig.children.find((c) => c.isGroup && c.position.x > 0.3 && Math.abs(c.position.y - 0.86) < 0.01);
+
+const maskG = new THREE.Group(); maskG.visible = false;
+if (head) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xf1f1ec, roughness: 1 });
+  const geo = new THREE.SphereGeometry(0.1, 16, 10), Z = new THREE.Vector3(0, 0, 1);
+  [[0.16, 0.17, 1.25, 0.72], [-0.16, 0.17, 1.25, 0.72], [0, 0.085, 1.15, 0.6]].forEach(([x, y, sx, sy]) => {
+    const dx = x, dy = y - 0.31, z = Math.sqrt(Math.max(0.01, 0.335 * 0.335 - dx * dx - dy * dy)) * 0.96;
+    const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.scale.set(sx, sy, 0.3);
+    m.quaternion.setFromUnitVectors(Z, new THREE.Vector3(dx, dy, z).normalize()); maskG.add(m);
+  });
+  const nose = new THREE.Mesh(geo, mat); nose.position.set(0, 0.255, 0.345); nose.scale.setScalar(0.36); maskG.add(nose);
+  head.add(maskG);
+}
+const drinkG = new THREE.Group(); drinkG.visible = false; drinkG.position.set(0, -0.47, 0.11);
+if (hand) {
+  drinkG.add(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.045, 0.16, 14).translate(0, 0.08, 0),
+    new THREE.MeshStandardMaterial({ color: 0x5fd6ee, roughness: 0.2, emissive: 0x0d4a5a, emissiveIntensity: 0.6 })));
+  drinkG.add(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.2, 6).rotateZ(0.25).translate(0.02, 0.17, 0), new THREE.MeshStandardMaterial({ color: 0xff5a6a })));
+  const lemon = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.012, 12), new THREE.MeshStandardMaterial({ color: 0xffd84a, roughness: 0.6 }));
+  lemon.rotation.x = Math.PI / 2; lemon.position.set(0.045, 0.15, 0); drinkG.add(lemon);
+  hand.add(drinkG);
+}
+
+const ZM = { x: MASK.x, z: MASK.z + 1.8 }, ZB = { x: BAR.x, z: BAR.z + 4.2 };
+const fx = { firstWater: false, maskT: 0, maskArmed: true, drinkT: 0, drinkArmed: true, steamK: 0 };
+w.onUpdate((dt, t) => {
+  const p = w.player.position, cam = w.camera.position;
+  // sky layers follow the camera
+  clouds.position.copy(cam); cloudU.uTime.value = t;
+  // personal steam while wading
+  fx.steamK += ((w.player.inWater ? 1 : 0) - fx.steamK) * (1 - Math.exp(-2.2 * dt));
+  mySteamU.value = 0.2 * fx.steamK; mySteam.visible = fx.steamK > 0.01;
+  const k = 1 - Math.exp(-2.5 * dt);
+  mySteam.position.x += (p.x - mySteam.position.x) * k; mySteam.position.z += (p.z - mySteam.position.z) * k;
+  if (w.player.inWater && !fx.firstWater) { fx.firstWater = true; w.toast('♨️ 水溫 38°C，好舒服～', 2600); }
+  // silica mask
+  const dm = Math.hypot(p.x - ZM.x, p.z - ZM.z);
+  if (dm > 6.5) fx.maskArmed = true;
+  if (head && dm < 3.4 && fx.maskArmed && fx.maskT <= 0) { fx.maskT = 45; fx.maskArmed = false; maskG.visible = true; w.toast('✨ 敷上矽泥面膜！', 2600); }
+  if (fx.maskT > 0) { fx.maskT -= dt; if (fx.maskT <= 0) { maskG.visible = false; w.toast('面膜洗掉了，皮膚滑嫩嫩～'); } }
+  // a drink from the bar
+  const db = Math.hypot(p.x - ZB.x, p.z - ZB.z);
+  if (db > 7.5) fx.drinkArmed = true;
+  if (hand && db < 3.6 && fx.drinkArmed && fx.drinkT <= 0) { fx.drinkT = 75; fx.drinkArmed = false; drinkG.visible = true; w.toast('🍹 點了一杯藍湖特調，乾杯！', 2600); }
+  if (fx.drinkT > 0) { fx.drinkT -= dt; if (fx.drinkT <= 0) { drinkG.visible = false; w.toast('飲料喝完囉～再去點一杯？'); } }
+  // gulls circling over the lagoon
+  for (const o of birds) {
+    o.a += dt * o.sp;
+    const x = -6 + Math.cos(o.a) * o.rad, z = -34 + Math.sin(o.a) * o.rad * 0.6;
+    o.b.position.set(x, o.h + Math.sin(t * 0.7 + o.ph) * 1.2, z);
+    o.b.rotation.y = Math.atan2(-Math.sin(o.a) * Math.sign(o.sp), Math.cos(o.a) * 0.6 * Math.sign(o.sp));
+    const f = Math.sin(t * 6.5 + o.ph) * 0.55; o.l.rotation.z = f; o.r.rotation.z = -f;
+  }
+  // warm flicker in the bar
+  if (hutLight) hutLight.intensity = 18 + Math.sin(t * 5.3) * 0.6 + Math.sin(t * 13.1) * 0.35;
+});
+
+/* ═════════════════ 16. go ═════════════════ */
+w.start();
+</script>
+</body>
+</html>
