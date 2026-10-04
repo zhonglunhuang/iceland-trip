@@ -41,9 +41,9 @@
     zIndex: 9000,
     webgl: true,
     gyroOnOpen: true,       // 觸控裝置：在開啟的那一下點擊中請求陀螺儀權限（iOS）
-    fxIntensity: 1.1,
-    overscan: 1.06,         // 額外放大，避免視差露出邊緣
-    parallax: 0.034,        // 視差幅度（短邊比例）
+    fxIntensity: 1,
+    overscan: 1.07,         // 額外放大，避免視差露出邊緣
+    parallax: 0.042,        // 視差幅度（短邊比例）
     focus: 0.42,            // 焦平面深度（0 遠 · 1 近）
     maxPixels: 2.4e6,       // WebGL 畫布像素上限（照片本身 1600px，再高也沒有細節）
     data: null              // 預設讀 window.TRIP
@@ -1086,19 +1086,21 @@
     S.raf = 0;
     if (!S.isOpen) return;
     const t = now();
-    let dt = S.last ? (t - S.last) / 1000 : 1 / 60;
+    const raw = S.last ? (t - S.last) / 1000 : 1 / 60;
     S.last = t;
+    let dt = raw;
     if (!(dt > 0)) dt = 1 / 120; else if (dt > 0.05) dt = 0.05;
     S.time += dt;
     if (S.needResize) { S.needResize = false; measure(); }
     stepTweens(t);
     updateCamera(dt, t);
     try { render(); } catch (e) { warn('render failed', e); if (S.mode === 'webgl') toCSSMode(); }
-    perf(dt);
+    perf(raw);
     S.raf = global.requestAnimationFrame(loop);
   }
   function perf(dt) {
     const P = S.perf;
+    if (!(dt > 0) || dt > 0.5) return;   // tab switch / long stall
     P.frames++;
     if (P.frames < 40) return;      // ignore warm-up (texture uploads, FLIP)
     P.acc += dt; P.n++;

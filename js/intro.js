@@ -201,7 +201,7 @@
     '.ixo__cap{grid-area:1/1;text-align:center;opacity:0;visibility:hidden}',
     '.ixo__kick{display:block;margin-bottom:12px;padding-left:.42em;font-size:clamp(10px,.95vw,12px);font-weight:500;letter-spacing:.42em;color:rgba(255,255,255,.58)}',
     '.ixo__txt{display:block;font-size:clamp(22px,3.1vw,44px);font-weight:600;line-height:1.2;letter-spacing:.06em;color:#fff;text-shadow:0 2px 28px rgba(0,0,0,.5)}',
-    '.ixo__grain{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:.55;background-size:180px 180px;animation:ixo-grain 1s steps(1,end) infinite}',
+    '.ixo__grain{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:.34;background-size:180px 180px;animation:ixo-grain 1s steps(1,end) infinite}',
     '@keyframes ixo-grain{0%{background-position:0 0}12%{background-position:-61px 37px}25%{background-position:43px -77px}37%{background-position:-97px -23px}50%{background-position:71px 89px}62%{background-position:-29px 113px}75%{background-position:107px -41px}87%{background-position:-83px 67px}}',
     '.ixo__bar{position:absolute;left:0;right:0;height:var(--bar);background:#000;z-index:3}',
     '.ixo__bar--t{top:0}.ixo__bar--b{bottom:0}',
@@ -658,9 +658,9 @@
     st.curtA = curtainTex([[0, 'rgba(179,140,255,0)'], [0.3, 'rgba(179,140,255,.32)'], [0.68, 'rgba(107,255,184,.7)'], [0.9, 'rgba(170,255,222,1)'], [1, 'rgba(107,255,184,0)']]);
     st.curtB = curtainTex([[0, 'rgba(127,227,255,0)'], [0.45, 'rgba(127,227,255,.3)'], [0.85, 'rgba(107,255,184,.8)'], [1, 'rgba(107,255,184,0)']]);
     st.ribbons = [
-      { y: 0.40, a1: 0.05, f1: 0.8, s1: 0.32, a2: 0.022, f2: 2.2, s2: 0.55, len: 0.34, k: 41, ks: 2.3, alpha: 0.55, u0: -0.15, u1: 1.1, p: 0.3, tex: st.curtA },
-      { y: 0.27, a1: 0.04, f1: 1.1, s1: 0.26, a2: 0.02, f2: 3.1, s2: 0.7, len: 0.26, k: 57, ks: 3.1, alpha: 0.32, u0: 0.1, u1: 1.25, p: 2.1, tex: st.curtB },
-      { y: 0.52, a1: 0.035, f1: 0.6, s1: 0.4, a2: 0.018, f2: 2.7, s2: 0.45, len: 0.22, k: 33, ks: 1.8, alpha: 0.28, u0: -0.3, u1: 0.8, p: 4.4, tex: st.curtA }
+      { y: 0.40, a1: 0.05, f1: 0.8, s1: 0.32, a2: 0.022, f2: 2.2, s2: 0.55, len: 0.34, k: 41, ks: 2.3, alpha: 0.42, u0: -0.15, u1: 1.1, p: 0.3, tex: st.curtA },
+      { y: 0.27, a1: 0.04, f1: 1.1, s1: 0.26, a2: 0.02, f2: 3.1, s2: 0.7, len: 0.26, k: 57, ks: 3.1, alpha: 0.24, u0: 0.1, u1: 1.25, p: 2.1, tex: st.curtB },
+      { y: 0.52, a1: 0.035, f1: 0.6, s1: 0.4, a2: 0.018, f2: 2.7, s2: 0.45, len: 0.22, k: 33, ks: 1.8, alpha: 0.2, u0: -0.3, u1: 0.8, p: 4.4, tex: st.curtA }
     ];
     var N = st.lowPower ? 44 : 64, far = 30;
     st.zFar = far; st.zNear = 0.45;
@@ -697,7 +697,7 @@
     f.classList.remove('ixo-f0');
     setupScene(st);
     setTimeout(function () { if (st.gate && st.gate.parentNode) st.gate.parentNode.removeChild(st.gate); }, 1400);
-    try { st.skipBtn.focus({ preventScroll: true }); } catch (e) {}
+    try { if (st.gate.contains(D.activeElement)) D.activeElement.blur(); } catch (e) {}
     emit('start');
     call(st.o.onStart);
 
@@ -817,8 +817,8 @@
       c.drawImage(st.tex[0], cx - z1 * 0.7, cy - z1 * 0.5, z1 * 1.4, z1);
       c.globalAlpha = Math.min(1, fog * 0.7);
       c.drawImage(st.tex[3 % st.tex.length], cx - z2 * 0.65, cy - z2 * 0.45, z2 * 1.3, z2 * 0.9);
-      c.globalAlpha = fog * 0.55;
-      c.fillStyle = '#8193ab';
+      c.globalAlpha = fog * 0.36;
+      c.fillStyle = '#8a9bb2';
       c.fillRect(-pad, -pad, w + pad * 2, h + pad * 2);
     }
 
@@ -871,9 +871,9 @@
     var x0 = cx - ww / 2, y0 = cy - wh / 2, r = ww * 0.46, big = Math.max(w, h) * 3;
 
     var wall = c.createRadialGradient(cx, cy, ww * 0.45, cx, cy, ww * 1.7);
-    wall.addColorStop(0, '#20252e');
-    wall.addColorStop(0.45, '#12151b');
-    wall.addColorStop(1, '#050608');
+    wall.addColorStop(0, '#161a21');
+    wall.addColorStop(0.4, '#0b0d11');
+    wall.addColorStop(1, '#020203');
     c.globalAlpha = 1;
     c.beginPath();
     c.rect(cx - big, cy - big, big * 2, big * 2);
@@ -919,7 +919,7 @@
     c.globalCompositeOperation = 'lighter';
     for (var r = 0; r < st.ribbons.length; r++) {
       var R = st.ribbons[r];
-      for (var x = -4; x < w + 4; x += 2) {
+      for (var x = 0; x < w; x += 2) {
         var u = x / w;
         var env = Math.sin(Math.PI * clamp01((u - R.u0) / (R.u1 - R.u0)));
         if (env <= 0.01) continue;
@@ -930,7 +930,7 @@
         var a = R.alpha * env * (0.25 + 0.55 * fl * fl + 0.2 * fl2);
         if (a < 0.01) continue;
         c.globalAlpha = a;
-        c.drawImage(R.tex, x, y - len, 2.6, len);
+        c.drawImage(R.tex, x, Math.round(y - len), 2, Math.round(len));
       }
     }
     c.globalCompositeOperation = 'source-over';
@@ -964,7 +964,7 @@
     }
     var sh = imgOn ? 0.95 - 0.5 * smooth(prog(T, TL.part[0], TL.part[1] + 0.4)) + 0.18 * smooth(prog(T, TL.title - 0.2, TL.title + 1.2)) : 0;
     setS(st.shade, 'opacity', sh.toFixed(3));
-    setS(st.aur, 'opacity', (0.9 * smooth(prog(T, TL.part[0] + 0.2, TL.part[1] + 0.4))).toFixed(3));
+    setS(st.aur, 'opacity', (0.78 * smooth(prog(T, TL.part[0] + 0.2, TL.part[1] + 0.4))).toFixed(3));
     if (!st.cloudsOff) setS(st.cv, 'opacity', (1 - smooth(prog(T, 5.25, TL.part[1]))).toFixed(3));
 
     // title: letters assemble from a blurred spread
